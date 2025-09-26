@@ -1,0 +1,15 @@
+rts-chess/
+├── client/                 # React frontend
+│   ├── src/
+│   │   ├── components/     # Game components
+│   │   ├── game/          # Game logic
+│   │   └── styles/        # CSS/styling
+│   └── public/
+├── server/                 # Node.js backend
+│   ├── src/
+│   │   ├── models/        # Data models
+│   │   ├── routes/        # API routes
+│   │   └── game/          # Server-side game logic
+│   └── package.json
+├── shared/                 # Shared types/utilities
+└── package.json
