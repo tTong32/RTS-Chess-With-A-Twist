@@ -4,12 +4,12 @@ export class ChessRules {
     
     static getCooldownTimes = () => {
         return {
-            pawn: 2000,   // 2 seconds
-            knight: 3000, // 3 seconds
-            bishop: 4000, // 4 seconds
-            rook: 5000,   // 5 seconds
-            queen: 6000,  // 6 seconds
-            king: 7000    // 7 seconds
+            pawn: 7000,   // 7 seconds
+            knight: 9000, // 3 seconds
+            bishop: 9000, // 4 seconds
+            rook: 11000,   // 5 seconds
+            queen: 14000,  // 6 seconds
+            king: 15000    // 7 seconds
         };
     };
 

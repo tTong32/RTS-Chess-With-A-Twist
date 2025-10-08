@@ -76,7 +76,6 @@ const GameBoard = ({ customBoard }) => {
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [gameTime, setGameTime] = useState(0);
-  const [currentPlayer, setCurrentPlayer] = useState('white'); // Tracks whose turn it is
   const [gameStatus, setGameStatus] = useState('playing'); // 'playing', 'white-wins', 'black-wins'
   const [moveHistory, setMoveHistory] = useState([]); // For recording moves
   const [showWinPopup, setShowWinPopup] = useState(false); // Controls popup visibility
@@ -122,6 +121,10 @@ const GameBoard = ({ customBoard }) => {
 
 
   const movePiece = useCallback((fromRow, fromCol, toRow, toCol) => {
+    // Store move for history before modifying the board
+    const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, board[fromRow][fromCol].type);
+    setMoveHistory(prevHistory => [...prevHistory, { move: algebraicMove, time: (gameTime / 1000).toFixed(1) }]);
+
     setBoard(prevBoard => {
       const newBoard = prevBoard.map(row => [...row]);
       const piece = newBoard[fromRow][fromCol];
@@ -129,26 +132,17 @@ const GameBoard = ({ customBoard }) => {
 
       // Check for king capture
       if (targetPiece && targetPiece.type === 'king') {
-        showWinScreen(currentPlayer); // The current player wins by capturing the king
+        showWinScreen(targetPiece.color === 'white' ? 'white' : 'black'); // The current player wins by capturing the king
       }
-      
-      // Store move for history before modifying the board
-      const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, piece.type);
-      setMoveHistory(prevHistory => [...prevHistory, { move: algebraicMove, time: (gameTime / 1000).toFixed(1) }]);
 
       // Place the piece on the new square with cooldown
       newBoard[toRow][toCol] = { ...piece, cooldown: piece.cooldownTime };
       // Clear the original square
       newBoard[fromRow][fromCol] = null;
 
-      // Determine whose turn it will be *next* only if game is still playing
-      if (gameStatus === 'playing') {
-          setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
-      }
-
       return newBoard;
     });
-  }, [currentPlayer, showWinScreen, gameTime, gameStatus]); // Dependencies for movePiece
+  }, [showWinScreen, gameTime, board]); // Dependencies for movePiece
 
 
   // calculateValidMoves remains similar, but without check logic
@@ -171,7 +165,7 @@ const GameBoard = ({ customBoard }) => {
     const piece = board[row][col];
     
     // Select piece if it's current player's, on cooldown 0, and not already selected
-    if (piece && piece.color === currentPlayer && piece.cooldown === 0 && (!selectedPiece || selectedPiece.piece.color === piece.color)){
+    if (piece && piece.cooldown === 0 && (!selectedPiece || selectedPiece.piece.color === piece.color)){
       setSelectedPiece({ row, col, piece });
       const moves = calculateValidMoves(board, row, col, piece);
       setValidMoves(moves);
@@ -191,7 +185,7 @@ const GameBoard = ({ customBoard }) => {
       setSelectedPiece(null);
       setValidMoves([]);
     }
-  }, [board, selectedPiece, validMoves, currentPlayer, gameStatus, movePiece, calculateValidMoves]); // Added all dependencies
+  }, [board, selectedPiece, validMoves, gameStatus, movePiece, calculateValidMoves]); // Added all dependencies
 
 
   const getCooldownPercentage = (piece) => {
@@ -204,11 +198,6 @@ const GameBoard = ({ customBoard }) => {
       case 'white-wins': return <p className="text-xl font-bold text-green-700">White Wins!</p>;
       case 'black-wins': return <p className="text-xl font-bold text-green-700">Black Wins!</p>;
       case 'playing': 
-        return (
-            <p className="text-lg">
-                Current Turn: <span className="font-bold">{currentPlayer.toUpperCase()}</span>
-            </p>
-        );
       default: return null;
     }
   };
