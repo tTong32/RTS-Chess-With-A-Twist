@@ -1,6 +1,18 @@
 // src/game/chessRules.js
 
 export class ChessRules {
+    
+    static getCooldownTimes = () => {
+        return {
+            pawn: 2000,   // 2 seconds
+            knight: 3000, // 3 seconds
+            bishop: 4000, // 4 seconds
+            rook: 5000,   // 5 seconds
+            queen: 6000,  // 6 seconds
+            king: 7000    // 7 seconds
+        };
+    };
+
     static isValidMove(board, fromRow, fromCol, toRow, toCol, piece) {
         if (!piece) return false;
 
@@ -15,7 +27,7 @@ export class ChessRules {
             case 'bishop': return this.isValidBishopMove(board, fromRow, fromCol, toRow, toCol);
             case 'rook': return this.isValidRookMove(board, fromRow, fromCol, toRow, toCol);
             case 'queen': return this.isValidQueenMove(board, fromRow, fromCol, toRow, toCol);
-            case 'king': return this.isValidKingMove(board, fromRow, fromCol, toRow, toCol);
+            case 'king': return this.isValidKingMove(fromRow, fromCol, toRow, toCol);
 
             // for future implementation 
             //case 'twisted pawn': return this.isValidTwistedPawnMove(board, fromRow, fromCol, toRow, toCol, piece);
