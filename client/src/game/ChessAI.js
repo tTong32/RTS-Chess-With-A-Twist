@@ -1,5 +1,5 @@
 // ChessAI.js - AI Engine for Real-time Chess
-import { ChessRules } from './ChessRules.js';
+import { CustomPieces } from './CustomPieces.js';
 
 export class ChessAI {
   constructor(elo = 1200) {
@@ -8,6 +8,8 @@ export class ChessAI {
     this.isThinking = false;
     this.lastMoveTime = 0;
     this.moveHistory = [];
+    this.customPieces = new CustomPieces(); // Create CustomPieces instance
+    this.energySystem = null; // Will be set by the game
     
     // ELO-based difficulty parameters
     this.difficultySettings = this.calculateDifficultySettings(elo);
@@ -44,7 +46,7 @@ export class ChessAI {
   }
 
   // Main AI decision function
-  async makeMove(board, gameTime) {
+  async makeMove(board, gameTime, currentEnergy = 0) {
     if (this.isThinking) return null;
     
     this.isThinking = true;
@@ -53,7 +55,7 @@ export class ChessAI {
       // Add reaction time delay based on difficulty
       await this.delay(this.difficultySettings.reactionTime);
       
-      const availableMoves = this.getAllAvailableMoves(board);
+      const availableMoves = this.getAllAvailableMoves(board, currentEnergy);
       if (availableMoves.length === 0) {
         this.isThinking = false;
         return null;
@@ -77,7 +79,7 @@ export class ChessAI {
   }
 
   // Get all possible moves for AI pieces
-  getAllAvailableMoves(board) {
+  getAllAvailableMoves(board, currentEnergy = 0) {
     const moves = [];
     
     for (let row = 0; row < 8; row++) {
@@ -85,18 +87,23 @@ export class ChessAI {
         const piece = board[row][col];
         
         if (piece && piece.color === this.color && piece.cooldown === 0) {
-          // Get all valid moves for this piece
-          for (let toRow = 0; toRow < 8; toRow++) {
-            for (let toCol = 0; toCol < 8; toCol++) {
-              if (ChessRules.isValidMove(board, row, col, toRow, toCol, piece)) {
-                moves.push({
-                  fromRow: row,
-                  fromCol: col,
-                  toRow: toRow,
-                  toCol: toCol,
-                  piece: piece,
-                  targetPiece: board[toRow][toCol]
-                });
+          // Check if AI has enough energy for this piece
+          const moveCost = this.energySystem ? this.energySystem.getEnergyCost(piece.type) : 0;
+          if (currentEnergy >= moveCost) {
+            // Get all valid moves for this piece
+            for (let toRow = 0; toRow < 8; toRow++) {
+              for (let toCol = 0; toCol < 8; toCol++) {
+                if (this.customPieces.isValidMove(board, row, col, toRow, toCol, piece)) {
+                  moves.push({
+                    fromRow: row,
+                    fromCol: col,
+                    toRow: toRow,
+                    toCol: toCol,
+                    piece: piece,
+                    targetPiece: board[toRow][toCol],
+                    energyCost: moveCost
+                  });
+                }
               }
             }
           }
@@ -306,7 +313,7 @@ export class ChessAI {
             for (let enemyCol = 0; enemyCol < 8; enemyCol++) {
               const enemyPiece = board[enemyRow][enemyCol];
               if (enemyPiece && enemyPiece.color !== color) {
-                if (ChessRules.isValidMove(board, enemyRow, enemyCol, row, col, enemyPiece)) {
+                if (this.customPieces.isValidMove(board, enemyRow, enemyCol, row, col, enemyPiece)) {
                   threats++;
                 }
               }
@@ -332,7 +339,7 @@ export class ChessAI {
               const friendlyPiece = board[friendlyRow][friendlyCol];
               if (friendlyPiece && friendlyPiece.color === color && 
                   !(friendlyRow === row && friendlyCol === col)) {
-                if (ChessRules.isValidMove(board, friendlyRow, friendlyCol, row, col, friendlyPiece)) {
+                if (this.customPieces.isValidMove(board, friendlyRow, friendlyCol, row, col, friendlyPiece)) {
                   protectedCount++;
                   break;
                 }

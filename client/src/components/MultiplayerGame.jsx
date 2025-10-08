@@ -1,19 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { ChessRules } from '../game/ChessRules.js';
+import { CustomPieces } from '../game/CustomPieces.js';
+import { EnergySystem } from '../game/EnergySystem.js';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
-  const symbols = {
-    king: '♔',
-    queen: '♕',
-    rook: '♖',
-    bishop: '♗',
-    knight: '♘',
-    pawn: '♙'
-  };
-  return symbols[type] || '?';
+  const customPieces = new CustomPieces();
+  return customPieces.getPieceInfo(type).symbol;
 }
 
 const MultiplayerGame = () => {
@@ -34,10 +28,35 @@ const MultiplayerGame = () => {
   });
   const [players, setPlayers] = useState([]);
   const [error, setError] = useState('');
+  
+  const [customPieces] = useState(new CustomPieces());
+  const [energySystem] = useState(new EnergySystem());
+  
+  // Energy system state
+  const [whiteEnergy, setWhiteEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [blackEnergy, setBlackEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [lastEnergyUpdate, setLastEnergyUpdate] = useState(0);
 
   const isValidMove = useCallback((board, fromRow, fromCol, toRow, toCol, piece) => {
-    return ChessRules.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
-  }, []);
+    return customPieces.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
+  }, [customPieces]);
+
+  // Local energy timer (since server doesn't handle energy yet)
+  useEffect(() => {
+    if (gameState.gameStatus !== 'playing') return;
+
+    const timer = setInterval(() => {
+      setWhiteEnergy(prevEnergy => 
+        energySystem.updateEnergy(prevEnergy, gameState.gameTime, lastEnergyUpdate)
+      );
+      setBlackEnergy(prevEnergy => 
+        energySystem.updateEnergy(prevEnergy, gameState.gameTime, lastEnergyUpdate)
+      );
+      setLastEnergyUpdate(gameState.gameTime);
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [gameState.gameStatus, gameState.gameTime, energySystem, lastEnergyUpdate]);
 
   useEffect(() => {
     if (!roomId || !playerColor) {
@@ -99,13 +118,21 @@ const MultiplayerGame = () => {
 
     const piece = board[row][col];
     
-    // Select piece if it's current player's, on cooldown 0, and not already selected
+    // Select piece if it's current player's, on cooldown 0, has enough energy, and not already selected
     if (piece && piece.cooldown === 0 && piece.color === playerColor && 
         (!selectedPiece || selectedPiece.piece.color === piece.color)) {
-      setSelectedPiece({ row, col, piece });
-      const moves = calculateValidMoves(board, row, col, piece);
-      setValidMoves(moves);
-      return;
+      const moveCost = energySystem.getEnergyCost(piece.type);
+      const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+      
+      if (currentEnergy >= moveCost) {
+        setSelectedPiece({ row, col, piece });
+        const moves = calculateValidMoves(board, row, col, piece);
+        setValidMoves(moves);
+        return;
+      } else {
+        alert(`Not enough energy! Need ${moveCost}, have ${currentEnergy}`);
+        return;
+      }
     }
     
     // If a piece is already selected, attempt to move it
@@ -115,6 +142,14 @@ const MultiplayerGame = () => {
       );
       
       if (isValid) {
+        // Deduct energy locally (server will handle this later)
+        const moveCost = energySystem.getEnergyCost(selectedPiece.piece.type);
+        if (selectedPiece.piece.color === 'white') {
+          setWhiteEnergy(prev => prev - moveCost);
+        } else {
+          setBlackEnergy(prev => prev - moveCost);
+        }
+        
         // Send move to server
         socket.emit('make-move', {
           fromRow: selectedPiece.row,
@@ -127,7 +162,7 @@ const MultiplayerGame = () => {
       setSelectedPiece(null);
       setValidMoves([]);
     }
-  }, [board, selectedPiece, validMoves, gameState, playerColor, socket, calculateValidMoves]);
+  }, [board, selectedPiece, validMoves, gameState, playerColor, socket, calculateValidMoves, energySystem, whiteEnergy, blackEnergy]);
 
   const getCooldownPercentage = (piece) => {
     return piece ? (piece.cooldown / piece.cooldownTime) * 100 : 0;
@@ -173,10 +208,25 @@ const MultiplayerGame = () => {
 
   return (
     <div className="flex flex-col items-center p-5 min-h-screen bg-gray-100">
+      {/* Top Energy Bar - Black */}
+      <div className="w-full max-w-2xl mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-semibold">Black Energy</span>
+          <span className="text-sm font-bold">{Math.round(blackEnergy)}/200</span>
+        </div>
+        <div className="w-full h-4 bg-gray-300 rounded-full">
+          <div 
+            className="h-full bg-black border border-gray-400 rounded-full transition-all duration-300"
+            style={{ width: `${(blackEnergy / 200) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Top Info Bar */}
       <div className="mb-5 text-center">
         <h2 className="text-3xl font-bold">RTS Chess - Multiplayer</h2>
         <p className="text-lg">Room: {roomId} | You are: {playerColor}</p>
-        <p className="text-lg">Game Time: {(gameState.gameTime / 1000).toFixed(1)}s</p>
+        <p className="text-lg">Game Time: {(gameState.gameTime / 1000).toFixed(1)}s | Energy Regen: {energySystem.getRegenerationRate(gameState.gameTime).toFixed(1)}/sec</p>
         {renderGameInfo()}
       </div>
       
@@ -231,6 +281,21 @@ const MultiplayerGame = () => {
                       >
                       {getPieceSymbol(cell.type)}
                       </div>
+                      
+                      {/* Energy cost indicator */}
+                      {(() => {
+                        const currentEnergy = cell.color === 'white' ? whiteEnergy : blackEnergy;
+                        const moveCost = energySystem.getEnergyCost(cell.type);
+                        const canMove = currentEnergy >= moveCost && cell.cooldown === 0;
+                        return cell.cooldown === 0 && (
+                          <div className={`absolute top-1 right-1 w-6 h-6 rounded-full border border-white flex items-center justify-center ${
+                            canMove ? 'bg-green-500' : 'bg-gray-400'
+                          }`}>
+                            <span className="text-xs font-bold text-white">{moveCost}</span>
+                          </div>
+                        );
+                      })()}
+                      
                       {cell.cooldown > 0 && (
                       <div 
                           className="absolute bottom-0 left-0 w-full bg-[rgba(255,0,0,0.3)] z-[1] transition-[height] duration-100"
@@ -253,24 +318,8 @@ const MultiplayerGame = () => {
         </div>
         </div>
 
-        {/* Right-side panels */}
-        <div className="ml-4 space-y-4">
-          {/* Players Panel */}
-          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64">
-            <h3 className="text-lg font-semibold mb-2">Players</h3>
-            <div className="space-y-2">
-              {players.map((player, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <span className="font-medium">{player.name}</span>
-                  <span className={`px-2 py-1 rounded text-xs font-bold ${
-                    player.color === 'white' ? 'bg-white text-black' : 'bg-black text-white'
-                  }`}>
-                    {player.color}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Right-side panel - Move History Only */}
+        <div className="ml-4">
 
           {/* Move History Panel */}
           <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64 max-h-[300px] overflow-y-auto">
@@ -299,6 +348,20 @@ const MultiplayerGame = () => {
               Leave Game
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Bottom Energy Bar - White */}
+      <div className="w-full max-w-2xl mt-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-semibold">White Energy</span>
+          <span className="text-sm font-bold">{Math.round(whiteEnergy)}/200</span>
+        </div>
+        <div className="w-full h-4 bg-gray-300 rounded-full">
+          <div 
+            className="h-full bg-white border border-gray-400 rounded-full transition-all duration-300"
+            style={{ width: `${(whiteEnergy / 200) * 100}%` }}
+          />
         </div>
       </div>
     </div>

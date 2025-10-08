@@ -9,32 +9,32 @@ import MultiplayerLobby from './components/MultiplayerLobby.jsx';
 import MultiplayerGame from './components/MultiplayerGame.jsx';
 import AIGameSetup from './components/AIGameSetup.jsx';
 import AIGame from './components/AIGame.jsx';
-import { ChessRules } from './game/ChessRules.js';
+import { CustomPieces } from './game/CustomPieces.js';
 
 function initializeDefaultBoard() {
     const initialBoard = Array(8).fill().map(() => Array(8).fill(null));
-
-    // Define cooldown times for different piece types
-    const cooldownTimes = ChessRules.getCooldownTimes();
+    const customPieces = new CustomPieces();
 
     for (let i = 0; i < 8; i++){
-        initialBoard[6][i] = { type: 'pawn', color: 'white', cooldown: 0, cooldownTime: cooldownTimes.pawn };
-        initialBoard[1][i] = { type: 'pawn', color: 'black', cooldown: 0, cooldownTime: cooldownTimes.pawn };
+        const pawnInfo = customPieces.getPieceInfo('pawn');
+        initialBoard[6][i] = { type: 'pawn', color: 'white', cooldown: 0, cooldownTime: pawnInfo.cooldownTime };
+        initialBoard[1][i] = { type: 'pawn', color: 'black', cooldown: 0, cooldownTime: pawnInfo.cooldownTime };
     }
 
     const backRowPieces = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-    backRowPieces.forEach((pieceType, i) => { // Renamed 'piece' to 'pieceType' to avoid confusion with the object
+    backRowPieces.forEach((pieceType, i) => {
+        const pieceInfo = customPieces.getPieceInfo(pieceType);
         initialBoard[0][i] = {
             type: pieceType,
             color: 'black',
             cooldown: 0,
-            cooldownTime: cooldownTimes[pieceType]
+            cooldownTime: pieceInfo.cooldownTime
         };
         initialBoard[7][i] = {
             type: pieceType,
             color: 'white',
             cooldown: 0,
-            cooldownTime: cooldownTimes[pieceType]
+            cooldownTime: pieceInfo.cooldownTime
         };
     });
 

@@ -1,19 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Import useRef
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChessRules } from '../game/ChessRules.js';
 import { ChessAI } from '../game/ChessAI.js';
+import { CustomPieces } from '../game/CustomPieces.js';
+import { EnergySystem } from '../game/EnergySystem.js';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
-  const symbols = {
-    king: '♔',
-    queen: '♕',
-    rook: '♖',
-    bishop: '♗',
-    knight: '♘',
-    pawn: '♙'
-  };
-  return symbols[type] || '?';
+  // customPieces will be stable, so it's okay to create it here too, or pass it as an argument
+  const customPiecesInstance = new CustomPieces(); // Still a new instance, but outside of React component scope
+  return customPiecesInstance.getPieceInfo(type).symbol;
 }
 
 // Helper function for algebraic notation
@@ -36,6 +31,41 @@ const AIGame = () => {
   const navigate = useNavigate();
   const { aiElo, playerColor } = location.state || {};
   
+  // FIX: Use useRef to create stable instances of CustomPieces and EnergySystem
+  const customPieces = useRef(new CustomPieces()).current;
+  const energySystem = useRef(new EnergySystem()).current;
+
+  // Now, initializeBoard must also use the stable customPieces instance
+  const initializeBoard = useCallback(() => {
+    const initialBoard = Array(8).fill().map(() => Array(8).fill(null));
+    
+    for (let i = 0; i < 8; i++) {
+      const pawnInfo = customPieces.getPieceInfo('pawn'); // Use customPieces from useRef
+      initialBoard[1][i] = { type: 'pawn', color: 'black', cooldown: 0, cooldownTime: pawnInfo.cooldownTime };
+      initialBoard[6][i] = { type: 'pawn', color: 'white', cooldown: 0, cooldownTime: pawnInfo.cooldownTime };
+    }
+    
+    const backRowPieces = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+    
+    backRowPieces.forEach((pieceType, i) => {
+      const pieceInfo = customPieces.getPieceInfo(pieceType); // Use customPieces from useRef
+      initialBoard[0][i] = { 
+        type: pieceType, 
+        color: 'black', 
+        cooldown: 0, 
+        cooldownTime: pieceInfo.cooldownTime 
+      };
+      initialBoard[7][i] = { 
+        type: pieceType, 
+        color: 'white', 
+        cooldown: 0, 
+        cooldownTime: pieceInfo.cooldownTime 
+      };
+    });
+    
+    return initialBoard;
+  }, [customPieces]); // Add customPieces to dependency array for initializeBoard
+
   const [board, setBoard] = useState(() => initializeBoard());
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -47,51 +77,29 @@ const AIGame = () => {
   const [winColor, setWinColor] = useState('');
   const [ai, setAi] = useState(null);
   const [aiStatus, setAiStatus] = useState({ isThinking: false });
+  
+  // Energy system state
+  // FIX: Use energySystem.current for initial state, which is stable
+  const [whiteEnergy, setWhiteEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [blackEnergy, setBlackEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [lastEnergyUpdate, setLastEnergyUpdate] = useState(0);
 
-  function initializeBoard() {
-    const initialBoard = Array(8).fill().map(() => Array(8).fill(null));
-    
-    const cooldownTimes = ChessRules.getCooldownTimes();
-    
-    for (let i = 0; i < 8; i++) {
-      initialBoard[1][i] = { type: 'pawn', color: 'black', cooldown: 0, cooldownTime: cooldownTimes.pawn };
-      initialBoard[6][i] = { type: 'pawn', color: 'white', cooldown: 0, cooldownTime: cooldownTimes.pawn };
-    }
-    
-    const backRowPieces = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-    
-    backRowPieces.forEach((pieceType, i) => {
-      initialBoard[0][i] = { 
-        type: pieceType, 
-        color: 'black', 
-        cooldown: 0, 
-        cooldownTime: cooldownTimes[pieceType] 
-      };
-      initialBoard[7][i] = { 
-        type: pieceType, 
-        color: 'white', 
-        cooldown: 0, 
-        cooldownTime: cooldownTimes[pieceType] 
-      };
-    });
-    
-    return initialBoard;
-  }
-
+  // isValidMove now correctly uses the stable customPieces
   const isValidMove = useCallback((board, fromRow, fromCol, toRow, toCol, piece) => {
-    return ChessRules.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
-  }, []);
+    return customPieces.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
+  }, [customPieces]); // Add customPieces to dependency array
 
   // Initialize AI
   useEffect(() => {
     if (aiElo && playerColor) {
       const aiInstance = new ChessAI(aiElo);
       aiInstance.color = playerColor === 'white' ? 'black' : 'white';
+      aiInstance.energySystem = energySystem; // energySystem is now a stable reference
       setAi(aiInstance);
     } else {
       navigate('/ai-setup');
     }
-  }, [aiElo, playerColor, navigate]);
+  }, [aiElo, playerColor, navigate, energySystem]); // energySystem is now a stable reference in the dependency array
 
   // Game timer and AI move handling
   useEffect(() => {
@@ -100,6 +108,15 @@ const AIGame = () => {
     const timer = setInterval(() => {
       setGameTime(prev => {
         const newTime = prev + 100;
+        
+        // Update energy for both players
+        setWhiteEnergy(prevEnergy => 
+          energySystem.updateEnergy(prevEnergy, newTime, lastEnergyUpdate)
+        );
+        setBlackEnergy(prevEnergy => 
+          energySystem.updateEnergy(prevEnergy, newTime, lastEnergyUpdate)
+        );
+        setLastEnergyUpdate(newTime);
         
         // Update board cooldowns
         setBoard(prevBoard => 
@@ -123,7 +140,8 @@ const AIGame = () => {
             );
 
             if (aiPiecesAvailable) {
-              ai.makeMove(currentBoard, newTime).then(move => {
+              const aiEnergy = ai.color === 'white' ? whiteEnergy : blackEnergy;
+              ai.makeMove(currentBoard, newTime, aiEnergy).then(move => {
                 if (move) {
                   setBoard(prevBoard => {
                     const newBoard = prevBoard.map(row => [...row]);
@@ -138,13 +156,22 @@ const AIGame = () => {
                       setShowWinPopup(true);
                     }
 
+                    // Deduct energy for AI move
+                    const moveCost = energySystem.getEnergyCost(piece.type);
+                    if (piece.color === 'white') {
+                      setWhiteEnergy(prev => prev - moveCost);
+                    } else {
+                      setBlackEnergy(prev => prev - moveCost);
+                    }
+
                     // Record AI move
                     const algebraicMove = toAlgebraicNotation(move.fromRow, move.fromCol, move.toRow, move.toCol, piece.type);
                     setMoveHistory(prevHistory => [...prevHistory, { 
                       move: algebraicMove, 
                       time: (newTime / 1000).toFixed(1),
                       player: ai.color,
-                      isAI: true
+                      isAI: true,
+                      energy: moveCost
                     }]);
 
                     // Update board
@@ -165,7 +192,7 @@ const AIGame = () => {
     }, 100);
 
     return () => clearInterval(timer);
-  }, [gameStatus, ai]);
+  }, [gameStatus, ai, energySystem, lastEnergyUpdate, whiteEnergy, blackEnergy]); // Add whiteEnergy, blackEnergy to dependencies
 
   // Update AI status for display
   useEffect(() => {
@@ -186,19 +213,36 @@ const AIGame = () => {
   }, []);
 
   const movePiece = useCallback((fromRow, fromCol, toRow, toCol) => {
+    const piece = board[fromRow][fromCol];
+    const targetPiece = board[toRow][toCol];
+    const moveCost = energySystem.getEnergyCost(piece.type);
+    
+    // Check if player has enough energy
+    const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+    if (currentEnergy < moveCost) {
+      alert(`Not enough energy! Need ${moveCost}, have ${currentEnergy}`);
+      return;
+    }
+
     // Store move for history before modifying the board
-    const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, board[fromRow][fromCol].type);
+    const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, piece.type);
     setMoveHistory(prevHistory => [...prevHistory, { 
       move: algebraicMove, 
       time: (gameTime / 1000).toFixed(1),
       player: playerColor,
-      isAI: false
+      isAI: false,
+      energy: moveCost
     }]);
+
+    // Update energy
+    if (piece.color === 'white') {
+      setWhiteEnergy(prev => prev - moveCost);
+    } else {
+      setBlackEnergy(prev => prev - moveCost);
+    }
 
     setBoard(prevBoard => {
       const newBoard = prevBoard.map(row => [...row]);
-      const piece = newBoard[fromRow][fromCol];
-      const targetPiece = newBoard[toRow][toCol];
 
       // Check for king capture
       if (targetPiece && targetPiece.type === 'king') {
@@ -212,10 +256,18 @@ const AIGame = () => {
 
       return newBoard;
     });
-  }, [showWinScreen, gameTime, playerColor, board]);
+  }, [showWinScreen, gameTime, playerColor, board, energySystem, whiteEnergy, blackEnergy, setWhiteEnergy, setBlackEnergy]); // Added setWhiteEnergy, setBlackEnergy
 
   const calculateValidMoves = useCallback((board, fromRow, fromCol, piece) => {
     const moves = [];
+    const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+    const moveCost = energySystem.getEnergyCost(piece.type);
+    
+    // Only calculate moves if player has enough energy
+    if (currentEnergy < moveCost) {
+      return moves;
+    }
+    
     for (let toRow = 0; toRow < 8; toRow++) {
       for (let toCol = 0; toCol < 8; toCol++) {
         if (isValidMove(board, fromRow, fromCol, toRow, toCol, piece)) {
@@ -224,7 +276,7 @@ const AIGame = () => {
       }
     }
     return moves;
-  }, [isValidMove]);
+  }, [isValidMove, energySystem, whiteEnergy, blackEnergy]);
 
   const handleSquareClick = useCallback((row, col) => {
     if (gameStatus !== 'playing') return;
@@ -260,6 +312,10 @@ const AIGame = () => {
   };
 
   const renderGameInfo = () => {
+    // energySystem.current is now used if EnergySystem instance itself is stored in ref
+    // But since `energySystem` is `useRef(new EnergySystem()).current`, `energySystem` is already the instance
+    const currentRegenerationRate = energySystem.getRegenerationRate(gameTime); 
+    
     switch (gameStatus) {
       case 'white-wins': return <p className="text-xl font-bold text-green-700">White Wins!</p>;
       case 'black-wins': return <p className="text-xl font-bold text-green-700">Black Wins!</p>;
@@ -268,13 +324,14 @@ const AIGame = () => {
         <div className="text-center">
           <p className="text-lg">You are playing as <span className="font-bold">{playerColor}</span></p>
           <p className="text-sm text-gray-600">AI ELO: {aiElo}</p>
+          <p className="text-sm text-gray-600">Energy Regen: {currentRegenerationRate.toFixed(1)}/sec</p>
         </div>
       );
     }
   };
 
   const resetGame = useCallback(() => {
-    setBoard(initializeBoard());
+    setBoard(initializeBoard()); // initializeBoard itself uses customPieces
     setSelectedPiece(null);
     setValidMoves([]);
     setGameTime(0);
@@ -283,11 +340,14 @@ const AIGame = () => {
     setShowWinPopup(false);
     setWinMessage('');
     setWinColor('');
+    setWhiteEnergy(energySystem.energyLimits.startingEnergy); // energySystem is stable
+    setBlackEnergy(energySystem.energyLimits.startingEnergy); // energySystem is stable
+    setLastEnergyUpdate(0);
     if (ai) {
       ai.moveHistory = [];
       ai.lastMoveTime = 0;
     }
-  }, [ai]);
+  }, [ai, energySystem, initializeBoard]); // Added initializeBoard to dependencies
 
   const handleLeaveGame = () => {
     navigate('/');
@@ -295,10 +355,32 @@ const AIGame = () => {
 
   return (
     <div className="flex flex-col items-center p-5 min-h-screen bg-gray-100">
+      {/* Top Energy Bar - Black */}
+      <div className="w-full max-w-2xl mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-semibold">Black Energy</span>
+          <span className="text-sm font-bold">{Math.round(blackEnergy)}/{energySystem.getMaxEnergy()}</span>
+        </div>
+        <div className="w-full h-4 bg-gray-300 rounded-full">
+          <div 
+            className="h-full bg-black border border-gray-400 rounded-full transition-all duration-300"
+            style={{ width: `${(blackEnergy / energySystem.getMaxEnergy()) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Top Info Bar */}
       <div className="mb-5 text-center">
         <h2 className="text-3xl font-bold">RTS Chess vs AI</h2>
         <p className="text-lg">Game Time: {(gameTime / 1000).toFixed(1)}s</p>
         {renderGameInfo()}
+        
+        {/* AI Status */}
+        <div className="mt-2 text-sm">
+          <span className="mr-4">AI ELO: <span className="font-bold">{aiElo}</span></span>
+          <span className="mr-4">AI Thinking: <span className={aiStatus.isThinking ? 'text-red-600' : 'text-green-600'}>{aiStatus.isThinking ? 'Yes' : 'No'}</span></span>
+          <span>AI Moves: <span className="font-bold">{aiStatus.moveCount || 0}</span></span>
+        </div>
       </div>
       
       <div className="flex items-start">
@@ -350,6 +432,21 @@ const AIGame = () => {
                       >
                       {getPieceSymbol(cell.type)}
                       </div>
+                      
+                      {/* Energy cost indicator */}
+                      {(() => {
+                        const currentEnergy = cell.color === 'white' ? whiteEnergy : blackEnergy;
+                        const moveCost = energySystem.getEnergyCost(cell.type);
+                        const canMove = currentEnergy >= moveCost && cell.cooldown === 0;
+                        return cell.cooldown === 0 && (
+                          <div className={`absolute top-1 right-1 w-6 h-6 rounded-full border border-white flex items-center justify-center ${
+                            canMove ? 'bg-green-500' : 'bg-gray-400'
+                          }`}>
+                            <span className="text-xs font-bold text-white">{moveCost}</span>
+                          </div>
+                        );
+                      })()}
+                      
                       {cell.cooldown > 0 && (
                       <div 
                           className="absolute bottom-0 left-0 w-full bg-[rgba(255,0,0,0.3)] z-[1] transition-[height] duration-100"
@@ -372,28 +469,8 @@ const AIGame = () => {
         </div>
         </div>
 
-        {/* Right-side panels */}
-        <div className="ml-4 space-y-4">
-          {/* AI Status Panel */}
-          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64">
-            <h3 className="text-lg font-semibold mb-2">AI Status</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>ELO Rating:</span>
-                <span className="font-bold">{aiElo}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Thinking:</span>
-                <span className={aiStatus.isThinking ? 'text-red-600' : 'text-green-600'}>
-                  {aiStatus.isThinking ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Moves Made:</span>
-                <span>{aiStatus.moveCount || 0}</span>
-              </div>
-            </div>
-          </div>
+        {/* Right-side panel - Move History Only */}
+        <div className="ml-4">
 
           {/* Move History Panel */}
           <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64 max-h-[300px] overflow-y-auto">
@@ -408,6 +485,9 @@ const AIGame = () => {
                         }`}>
                           {entry.isAI ? 'AI' : 'You'}
                         </span>
+                        {entry.energy && (
+                          <span className="text-xs ml-2 text-red-600">-{entry.energy}</span>
+                        )}
                     </li>
                 ))}
             </ol>
@@ -428,6 +508,20 @@ const AIGame = () => {
               Leave Game
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Bottom Energy Bar - White */}
+      <div className="w-full max-w-2xl mt-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-semibold">White Energy</span>
+          <span className="text-sm font-bold">{Math.round(whiteEnergy)}/{energySystem.getMaxEnergy()}</span>
+        </div>
+        <div className="w-full h-4 bg-gray-300 rounded-full">
+          <div 
+            className="h-full bg-white border border-gray-400 rounded-full transition-all duration-300"
+            style={{ width: `${(whiteEnergy / energySystem.getMaxEnergy()) * 100}%` }}
+          />
         </div>
       </div>
 

@@ -2,7 +2,7 @@
 // BoardEditor.jsx
 import React, { useState, useEffect } from 'react'; // Removed useCallback as it's no longer needed for cooldownTimes
 import { useNavigate } from 'react-router-dom';
-import { ChessRules } from '../game/ChessRules.js';
+import { CustomPieces } from '../game/CustomPieces.js';
 
 function getPieceSymbol(type) {
     const symbols = {
@@ -24,8 +24,16 @@ const BoardEditor = ({ initialBoard, onSaveBoard }) => {
     const boardSize = 540;
 
     // --- MODIFIED LINE HERE ---
-    // 'cooldownTimes' is now directly the object returned by ChessRules.getCooldownTimes()
-    const cooldownTimes = ChessRules.getCooldownTimes(); 
+    // Get cooldown times from CustomPieces
+    const customPieces = new CustomPieces();
+    const cooldownTimes = {
+      pawn: customPieces.getPieceInfo('pawn').cooldownTime,
+      knight: customPieces.getPieceInfo('knight').cooldownTime,
+      bishop: customPieces.getPieceInfo('bishop').cooldownTime,
+      rook: customPieces.getPieceInfo('rook').cooldownTime,
+      queen: customPieces.getPieceInfo('queen').cooldownTime,
+      king: customPieces.getPieceInfo('king').cooldownTime,
+    }; 
     // --- END MODIFICATION ---
 
     const pieceTypes = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'];

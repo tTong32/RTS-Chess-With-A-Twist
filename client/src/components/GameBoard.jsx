@@ -1,153 +1,189 @@
-// GameBoard.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChessRules } from '../game/ChessRules.js'
+import { CustomPieces } from '../game/CustomPieces.js';
+import { EnergySystem } from '../game/EnergySystem.js';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
-  const symbols = {
-    king: '♔',
-    queen: '♕',
-    rook: '♖',
-    bishop: '♗',
-    knight: '♘',
-    pawn: '♙'
-  };
-  return symbols[type] || '?';
+  const customPieces = new CustomPieces();
+  return customPieces.getPieceInfo(type).symbol;
 }
 
 // Helper function for algebraic notation
 function toAlgebraicNotation(fromR, fromC, toR, toC, pieceType) {
-    const colToChar = c => String.fromCharCode(97 + c); // 0 -> 'a', 1 -> 'b', etc.
-    const rowToNum = r => 8 - r; // 0 -> '8', 1 -> '7', etc.
+  const colToChar = c => String.fromCharCode(97 + c);
+  const rowToNum = r => 8 - r;
 
-    let notation = '';
-
-    // Piece initial (uppercase for pieces, pawns get no letter)
-    if (pieceType !== 'pawn') {
-        notation += pieceType.charAt(0).toUpperCase();
-    }
-
-    // From square
-    notation += colToChar(fromC) + rowToNum(fromR);
-
-    // Separator (simple hyphen for all moves/captures as per simplified rules)
-    notation += '-'; 
-
-    // To square
-    notation += colToChar(toC) + rowToNum(toR);
-
-    return notation;
+  let notation = '';
+  if (pieceType !== 'pawn') {
+    notation += pieceType.charAt(0).toUpperCase();
+  }
+  notation += colToChar(fromC) + rowToNum(fromR);
+  notation += '-';
+  notation += colToChar(toC) + rowToNum(toR);
+  return notation;
 }
 
-const GameBoard = ({ customBoard }) => {
-  // Re-introducing initializeBoard here, as it's needed for New Game/Rematch
-  // (Assuming you've incorporated ChessRules.getCooldownTimes here as per previous steps)
+const EnhancedGameBoard = ({ customBoard, playerColor = 'white' }) => {
+  const [customPieces] = useState(new CustomPieces());
+  const [energySystem] = useState(new EnergySystem());
+  
+  const [board, setBoard] = useState(customBoard || initializeBoard());
+  const [selectedPiece, setSelectedPiece] = useState(null);
+  const [validMoves, setValidMoves] = useState([]);
+  const [gameTime, setGameTime] = useState(0);
+  const [gameStatus, setGameStatus] = useState('playing');
+  const [moveHistory, setMoveHistory] = useState([]);
+  const [showWinPopup, setShowWinPopup] = useState(false);
+  const [winMessage, setWinMessage] = useState('');
+  const [winColor, setWinColor] = useState('');
+  
+  // Energy system state
+  const [whiteEnergy, setWhiteEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [blackEnergy, setBlackEnergy] = useState(energySystem.energyLimits.startingEnergy);
+  const [lastEnergyUpdate, setLastEnergyUpdate] = useState(0);
+
   function initializeBoard() {
     const initialBoard = Array(8).fill().map(() => Array(8).fill(null));
     
-    const cooldownTimes = ChessRules.getCooldownTimes();
+    // Use custom pieces system for cooldown times
+    const pieceTypes = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'];
     
     for (let i = 0; i < 8; i++) {
-      initialBoard[1][i] = { type: 'pawn', color: 'black', cooldown: 0, cooldownTime: cooldownTimes.pawn };
-      initialBoard[6][i] = { type: 'pawn', color: 'white', cooldown: 0, cooldownTime: cooldownTimes.pawn };
+      const pawnInfo = customPieces.getPieceInfo('pawn');
+      initialBoard[1][i] = { 
+        type: 'pawn', 
+        color: 'black', 
+        cooldown: 0, 
+        cooldownTime: pawnInfo.cooldownTime 
+      };
+      initialBoard[6][i] = { 
+        type: 'pawn', 
+        color: 'white', 
+        cooldown: 0, 
+        cooldownTime: pawnInfo.cooldownTime 
+      };
     }
     
     const backRowPieces = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
     
     backRowPieces.forEach((pieceType, i) => {
+      const pieceInfo = customPieces.getPieceInfo(pieceType);
       initialBoard[0][i] = { 
         type: pieceType, 
         color: 'black', 
         cooldown: 0, 
-        cooldownTime: cooldownTimes[pieceType] 
+        cooldownTime: pieceInfo.cooldownTime 
       };
       initialBoard[7][i] = { 
         type: pieceType, 
         color: 'white', 
         cooldown: 0, 
-        cooldownTime: cooldownTimes[pieceType] 
+        cooldownTime: pieceInfo.cooldownTime 
       };
     });
     
     return initialBoard;
   }
 
-  const [board, setBoard] = useState(customBoard || initializeBoard());
-  const [selectedPiece, setSelectedPiece] = useState(null);
-  const [validMoves, setValidMoves] = useState([]);
-  const [gameTime, setGameTime] = useState(0);
-  const [gameStatus, setGameStatus] = useState('playing'); // 'playing', 'white-wins', 'black-wins'
-  const [moveHistory, setMoveHistory] = useState([]); // For recording moves
-  const [showWinPopup, setShowWinPopup] = useState(false); // Controls popup visibility
-  const [winMessage, setWinMessage] = useState(''); // Message for the popup
-  const [winColor, setWinColor] = useState(''); // Winner color for popup styling/text
-
   const isValidMove = useCallback((board, fromRow, fromCol, toRow, toCol, piece) => {
-    return ChessRules.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
-  }, []);
+    return customPieces.isValidMove(board, fromRow, fromCol, toRow, toCol, piece);
+  }, [customPieces]);
 
+  // Main game loop with energy system
   useEffect(() => {
-    // Stop the timer if the game is no longer 'playing'
-    if (gameStatus !== 'playing') {
-        return; 
-    }
+    if (gameStatus !== 'playing') return;
 
     const timer = setInterval(() => {
-      setGameTime(prev => prev + 100);
-      
-      setBoard(prevBoard => 
-        prevBoard.map(row => 
-          row.map(cell => 
-            cell && cell.cooldown > 0 
-              ? { ...cell, cooldown: Math.max(0, cell.cooldown - 100) }
-              : cell
+      setGameTime(prev => {
+        const newTime = prev + 100;
+        
+        // Update energy for both players
+        setWhiteEnergy(prevEnergy => 
+          energySystem.updateEnergy(prevEnergy, newTime, lastEnergyUpdate)
+        );
+        setBlackEnergy(prevEnergy => 
+          energySystem.updateEnergy(prevEnergy, newTime, lastEnergyUpdate)
+        );
+        setLastEnergyUpdate(newTime);
+        
+        // Update board cooldowns
+        setBoard(prevBoard => 
+          prevBoard.map(row => 
+            row.map(cell => 
+              cell && cell.cooldown > 0 
+                ? { ...cell, cooldown: Math.max(0, cell.cooldown - 100) }
+                : cell
+            )
           )
-        )
-      );
+        );
+
+        return newTime;
+      });
     }, 100);
-    
+
     return () => clearInterval(timer);
-  }, [gameStatus]); // Depend on gameStatus to pause/resume timer
+  }, [gameStatus, energySystem, lastEnergyUpdate]);
 
-
-  // showWinScreen function is completed
   const showWinScreen = useCallback((winnerColor) => {
     const winningColorText = winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1);
-    setWinMessage(`${winningColorText} Wins!`); // Simplified message
+    setWinMessage(`${winningColorText} Wins!`);
     setWinColor(winnerColor);
     setGameStatus(`${winnerColor}-wins`);
     setShowWinPopup(true);
   }, []);
 
-
   const movePiece = useCallback((fromRow, fromCol, toRow, toCol) => {
-    // Store move for history before modifying the board
-    const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, board[fromRow][fromCol].type);
-    setMoveHistory(prevHistory => [...prevHistory, { move: algebraicMove, time: (gameTime / 1000).toFixed(1) }]);
+    const piece = board[fromRow][fromCol];
+    const targetPiece = board[toRow][toCol];
+    const moveCost = energySystem.getEnergyCost(piece.type);
+    
+    // Check if player has enough energy
+    const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+    if (currentEnergy < moveCost) {
+      alert(`Not enough energy! Need ${moveCost}, have ${currentEnergy}`);
+      return;
+    }
 
+    // Check for king capture
+    if (targetPiece && targetPiece.type === 'king') {
+      showWinScreen(piece.color);
+    }
+
+    // Store move for history before modifying the board
+    const algebraicMove = toAlgebraicNotation(fromRow, fromCol, toRow, toCol, piece.type);
+    setMoveHistory(prevHistory => [...prevHistory, { 
+      move: algebraicMove, 
+      time: (gameTime / 1000).toFixed(1),
+      energy: moveCost,
+      player: piece.color
+    }]);
+
+    // Update energy
+    if (piece.color === 'white') {
+      setWhiteEnergy(prev => prev - moveCost);
+    } else {
+      setBlackEnergy(prev => prev - moveCost);
+    }
+
+    // Update board
     setBoard(prevBoard => {
       const newBoard = prevBoard.map(row => [...row]);
-      const piece = newBoard[fromRow][fromCol];
-      const targetPiece = newBoard[toRow][toCol]; // Get the piece at the target square *before* moving
-
-      // Check for king capture
-      if (targetPiece && targetPiece.type === 'king') {
-        showWinScreen(targetPiece.color === 'white' ? 'white' : 'black'); // The current player wins by capturing the king
-      }
-
-      // Place the piece on the new square with cooldown
       newBoard[toRow][toCol] = { ...piece, cooldown: piece.cooldownTime };
-      // Clear the original square
       newBoard[fromRow][fromCol] = null;
-
       return newBoard;
     });
-  }, [showWinScreen, gameTime, board]); // Dependencies for movePiece
+  }, [showWinScreen, gameTime, energySystem, whiteEnergy, blackEnergy, board]);
 
-
-  // calculateValidMoves remains similar, but without check logic
   const calculateValidMoves = useCallback((board, fromRow, fromCol, piece) => {
     const moves = [];
+    const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+    const moveCost = energySystem.getEnergyCost(piece.type);
+    
+    // Only calculate moves if player has enough energy
+    if (currentEnergy < moveCost) {
+      return moves;
+    }
+    
     for (let toRow = 0; toRow < 8; toRow++) {
       for (let toCol = 0; toCol < 8; toCol++) {
         if (isValidMove(board, fromRow, fromCol, toRow, toCol, piece)) {
@@ -156,16 +192,16 @@ const GameBoard = ({ customBoard }) => {
       }
     }
     return moves;
-  }, [isValidMove]); // Depends on isValidMove
-
+  }, [isValidMove, energySystem, whiteEnergy, blackEnergy]);
 
   const handleSquareClick = useCallback((row, col) => {
-    if (gameStatus !== 'playing') return; // Prevent interaction if game is over
+    if (gameStatus !== 'playing') return;
 
     const piece = board[row][col];
     
     // Select piece if it's current player's, on cooldown 0, and not already selected
-    if (piece && piece.cooldown === 0 && (!selectedPiece || selectedPiece.piece.color === piece.color)){
+    if (piece && piece.cooldown === 0 && piece.color === playerColor && 
+        (!selectedPiece || selectedPiece.piece.color === piece.color)) {
       setSelectedPiece({ row, col, piece });
       const moves = calculateValidMoves(board, row, col, piece);
       setValidMoves(moves);
@@ -185,47 +221,57 @@ const GameBoard = ({ customBoard }) => {
       setSelectedPiece(null);
       setValidMoves([]);
     }
-  }, [board, selectedPiece, validMoves, gameStatus, movePiece, calculateValidMoves]); // Added all dependencies
-
+  }, [board, selectedPiece, validMoves, gameStatus, movePiece, calculateValidMoves, playerColor]);
 
   const getCooldownPercentage = (piece) => {
     return piece ? (piece.cooldown / piece.cooldownTime) * 100 : 0;
   };
 
-  // Function to display current game status and player turn
+  const canAffordMove = (piece) => {
+    const currentEnergy = piece.color === 'white' ? whiteEnergy : blackEnergy;
+    return energySystem.canAffordMove(currentEnergy, piece.type);
+  };
+
   const renderGameInfo = () => {
     switch (gameStatus) {
       case 'white-wins': return <p className="text-xl font-bold text-green-700">White Wins!</p>;
       case 'black-wins': return <p className="text-xl font-bold text-green-700">Black Wins!</p>;
       case 'playing': 
-      default: return null;
+      default: return (
+        <div className="text-center">
+          <p className="text-lg">You are playing as <span className="font-bold">{playerColor}</span></p>
+        </div>
+      );
     }
   };
 
-  // Reset game function for 'New Game' / 'Rematch' buttons
   const resetGame = useCallback(() => {
-      setBoard(customBoard || initializeBoard()); // Reset to initial prop or default
-      setSelectedPiece(null);
-      setValidMoves([]);
-      setGameTime(0);
-      setCurrentPlayer('white');
-      setGameStatus('playing');
-      setMoveHistory([]);
-      setShowWinPopup(false);
-      setWinMessage('');
-      setWinColor('');
-  }, [customBoard]); // customBoard should be a dependency if it could change
+    setBoard(customBoard || initializeBoard());
+    setSelectedPiece(null);
+    setValidMoves([]);
+    setGameTime(0);
+    setGameStatus('playing');
+    setMoveHistory([]);
+    setShowWinPopup(false);
+    setWinMessage('');
+    setWinColor('');
+    setWhiteEnergy(energySystem.energyLimits.startingEnergy);
+    setBlackEnergy(energySystem.energyLimits.startingEnergy);
+    setLastEnergyUpdate(0);
+  }, [customBoard, energySystem]);
 
+  const currentRegenerationRate = energySystem.getRegenerationRate(gameTime);
 
   return (
-    <div className="flex flex-col items-center p-5">
+    <div className="flex flex-col items-center p-5 min-h-screen bg-gray-100">
       <div className="mb-5 text-center">
-        <h2 className="text-3xl font-bold">RTS Chess</h2>
+        <h2 className="text-3xl font-bold">RTS Chess - Enhanced</h2>
         <p className="text-lg">Game Time: {(gameTime / 1000).toFixed(1)}s</p>
-        {renderGameInfo()} {/* Display game status and current turn */}
+        <p className="text-sm text-gray-600">Energy Regen: {currentRegenerationRate.toFixed(1)}/sec</p>
+        {renderGameInfo()}
       </div>
       
-      <div className="flex items-start"> {/* Use items-start for consistent top alignment */}
+      <div className="flex items-start">
         {/* Left-side row numbers (8-1) */}
         <div className="flex flex-col justify-around pr-1 text-gray-700 font-semibold text-sm">
           {Array.from({ length: 8 }, (_, i) => 8 - i).map(num => (
@@ -246,16 +292,28 @@ const GameBoard = ({ customBoard }) => {
               const isValidTarget = selectedPiece &&
               validMoves.some(move => move.row === rowIndex && move.col === colIndex);
               
+              const canMove = cell && cell.cooldown === 0 && canAffordMove(cell);
+              const isPlayerPiece = cell && cell.color === playerColor;
+              
               return (
               <div
                   key={colIndex}
                   className={`w-[60px] h-[60px] flex items-center justify-center relative cursor-pointer ${
                   (rowIndex + colIndex) % 2 === 0 ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'
-                  } ${isSelected ? 'bg-[#aec6cf]' : ''}`}
+                  } ${isSelected ? 'bg-[#aec6cf]' : ''} $`}
                   onClick={() => handleSquareClick(rowIndex, colIndex)}
               >
                   {isValidTarget && (
                   <div className="absolute top-1/2 left-1/2 w-4 h-4 bg-[rgba(95,95,95,0.75)] rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[1]" />
+                  )}
+                  
+                  {/* Energy cost indicator */}
+                  {cell && cell.cooldown === 0 && (
+                    <div className={`absolute top-1 right-1 w-6 h-6 rounded-full border border-white flex items-center justify-center ${
+                      canMove ? 'bg-green-500' : 'bg-gray-400'
+                    }`}>
+                      <span className="text-xs font-bold text-white">{energySystem.getEnergyCost(cell.type)}</span>
+                    </div>
                   )}
                   
                   {cell && (
@@ -296,21 +354,94 @@ const GameBoard = ({ customBoard }) => {
         </div>
         </div>
 
-        {/* Right-side move history panel */}
-        <div className="ml-4 p-4 bg-gray-100 border border-gray-300 rounded-lg w-64 max-h-[540px] overflow-y-auto">
+        {/* Right-side panels */}
+        <div className="ml-4 space-y-4">
+          {/* Energy Panel */}
+          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64">
+            <h3 className="text-lg font-semibold mb-2">Energy Status</h3>
+            <div className="space-y-3">
+              {/* White Energy */}
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>White Energy:</span>
+                  <span className="font-bold">{Math.round(whiteEnergy)}/{energySystem.getMaxEnergy()}</span>
+                </div>
+                <div className="w-full h-3 bg-gray-300 rounded-full">
+                  <div 
+                    className="h-full bg-white border border-gray-400 rounded-full transition-all duration-300"
+                    style={{ width: `${(whiteEnergy / energySystem.getMaxEnergy()) * 100}%` }}
+                  />
+                </div>
+              </div>
+              
+              {/* Black Energy */}
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Black Energy:</span>
+                  <span className="font-bold">{Math.round(blackEnergy)}/{energySystem.getMaxEnergy()}</span>
+                </div>
+                <div className="w-full h-3 bg-gray-300 rounded-full">
+                  <div 
+                    className="h-full bg-black border border-gray-400 rounded-full transition-all duration-300"
+                    style={{ width: `${(blackEnergy / energySystem.getMaxEnergy()) * 100}%` }}
+                  />
+                </div>
+              </div>
+              
+              <div className="text-xs text-gray-600">
+                Regen: {currentRegenerationRate.toFixed(1)}/sec
+              </div>
+            </div>
+          </div>
+
+          {/* Piece Costs Panel */}
+          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64">
+            <h3 className="text-lg font-semibold mb-2">Piece Energy Costs</h3>
+            <div className="space-y-1 text-sm">
+              {['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'].map(pieceType => {
+                const cost = energySystem.getEnergyCost(pieceType);
+                const canAfford = (playerColor === 'white' ? whiteEnergy : blackEnergy) >= cost;
+                return (
+                  <div key={pieceType} className={`flex justify-between ${canAfford ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className="capitalize">{pieceType}:</span>
+                    <span>{cost} energy</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Move History Panel */}
+          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64 max-h-[300px] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-2">Move History</h3>
             <ol className="list-decimal list-inside text-sm">
                 {moveHistory.map((entry, index) => (
                     <li key={index} className="mb-1">
                         <span className="font-medium">{entry.move}</span>
                         <span className="text-gray-500 text-xs ml-2">({entry.time}s)</span>
+                        <span className={`text-xs ml-2 px-1 py-0.5 rounded ${
+                          entry.player === 'white' ? 'bg-white text-black' : 'bg-black text-white'
+                        }`}>
+                          -{entry.energy}
+                        </span>
                     </li>
                 ))}
             </ol>
+          </div>
+
+          {/* Game Controls */}
+          <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg w-64 space-y-2">
+            <button
+              onClick={resetGame}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors duration-200"
+            >
+              New Game
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Win Popup Modal (styled to match screenshot) */}
+      {/* Win Popup Modal */}
       {showWinPopup && (
           <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
               <div className="bg-gray-700 text-white p-6 rounded-lg shadow-xl text-center min-w-[300px] max-w-sm w-full">
@@ -318,51 +449,19 @@ const GameBoard = ({ customBoard }) => {
                   
                   {winColor && (
                       <div className="flex items-center justify-center gap-3 mb-6">
-                        {/* Placeholder for player icon */}
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${winColor === 'white' ? 'bg-white text-black' : 'bg-black text-white'}`}>
                             {winColor === 'white' ? '♔' : '♚'}
                         </div>
-                        <p className="text-lg">{winColor.charAt(0).toUpperCase() + winColor.slice(1)} built a lead and didn't let up.</p>
+                        <p className="text-lg">{winColor.charAt(0).toUpperCase() + winColor.slice(1)} captured the king!</p>
                       </div>
                   )}
-
-                  {/* Placeholder for accuracy stats, similar to screenshot */}
-                  <div className="flex justify-around items-center mb-6 text-sm">
-                    <div className="flex flex-col items-center">
-                        <span className="text-green-500 text-2xl">👍</span>
-                        <span>6 Best</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-yellow-500 text-2xl">👌</span>
-                        <span>3 Excellent</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-red-500 text-2xl">❌</span>
-                        <span>1 Miss</span>
-                    </div>
-                  </div>
 
                   <button
                       className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-colors duration-200 mb-3"
                       onClick={resetGame}
                   >
-                      Game Review
+                      Play Again
                   </button>
-                  
-                  <div className="flex justify-center gap-3">
-                      <button
-                          className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
-                          onClick={resetGame}
-                      >
-                          New Bot
-                      </button>
-                      <button
-                          className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
-                          onClick={resetGame} // Rematch for now acts like New Game, can be extended
-                      >
-                          Rematch
-                      </button>
-                  </div>
               </div>
           </div>
       )}
@@ -370,4 +469,4 @@ const GameBoard = ({ customBoard }) => {
   );
 };
 
-export default GameBoard;
+export default EnhancedGameBoard;

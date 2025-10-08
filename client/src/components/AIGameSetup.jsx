@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BoardEditorPanel from './BoardEditorPanel.jsx';
 
-const AIGameSetup = () => {
+const EnhancedAIGameSetup = () => {
   const [aiElo, setAiElo] = useState(1200);
   const [playerColor, setPlayerColor] = useState('white');
+  const [customBoard, setCustomBoard] = useState(null);
+  const [showBoardEditor, setShowBoardEditor] = useState(false);
   const navigate = useNavigate();
 
   const eloRanges = [
@@ -26,151 +29,199 @@ const AIGameSetup = () => {
       state: { 
         aiElo, 
         playerColor,
-        gameMode: 'ai'
+        gameMode: 'ai',
+        customBoard: customBoard
       } 
     });
   };
 
+  const handleBoardChange = (newBoard) => {
+    setCustomBoard(newBoard);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 to-blue-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 to-blue-900 p-4">
+      <div className="max-w-7xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">Play Against AI</h1>
-          <p className="text-gray-600">Choose your opponent's strength</p>
+          <h1 className="text-4xl font-bold text-white mb-2">Play Against AI</h1>
+          <p className="text-purple-200">Choose your opponent's strength and customize your board</p>
         </div>
 
-        <div className="space-y-8">
-          {/* ELO Slider */}
-          <div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left Side - Board Editor */}
+          <div className="bg-white rounded-lg shadow-2xl p-6">
             <div className="flex justify-between items-center mb-4">
-              <label htmlFor="elo-slider" className="text-lg font-semibold text-gray-700">
-                AI Difficulty (ELO Rating)
-              </label>
-              <span className="text-2xl font-bold text-blue-600">{aiElo}</span>
+              <h2 className="text-2xl font-bold text-gray-800">Customize Your Board</h2>
+              <button
+                onClick={() => setShowBoardEditor(!showBoardEditor)}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors duration-200 ${
+                  showBoardEditor 
+                    ? 'bg-gray-500 hover:bg-gray-600 text-white' 
+                    : 'bg-purple-500 hover:bg-purple-600 text-white'
+                }`}
+              >
+                {showBoardEditor ? 'Hide Editor' : 'Show Editor'}
+              </button>
             </div>
             
-            <input
-              type="range"
-              id="elo-slider"
-              min="400"
-              max="2800"
-              step="50"
-              value={aiElo}
-              onChange={(e) => setAiElo(parseInt(e.target.value))}
-              className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-              style={{
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((aiElo - 400) / 2400) * 100}%, #e5e7eb ${((aiElo - 400) / 2400) * 100}%, #e5e7eb 100%)`
-              }}
-            />
-            
-            <div className="flex justify-between text-sm text-gray-500 mt-2">
-              <span>400 (Beginner)</span>
-              <span>2800 (Master)</span>
-            </div>
+            {showBoardEditor ? (
+              <div className="max-h-[600px] overflow-y-auto">
+                <BoardEditorPanel
+                  initialBoard={customBoard}
+                  onBoardChange={handleBoardChange}
+                  playerColor={playerColor}
+                />
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">🤖</div>
+                <p className="text-gray-600 mb-4">
+                  Customize your starting board with special pieces
+                </p>
+                <p className="text-sm text-gray-500">
+                  Click "Show Editor" to replace standard pieces with custom ones like Twisted Pawns, Flying Castles, and more!
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Current Difficulty Display */}
-          <div className="bg-gray-50 rounded-lg p-6">
-            <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-800 mb-2">
-                {currentRange.label} Level
-              </h3>
-              <p className="text-gray-600 mb-4">
-                {currentRange.description}
-              </p>
-              
-              {/* Difficulty Stats */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="bg-white rounded p-3">
-                  <div className="font-semibold text-gray-700">Reaction Time</div>
-                  <div className="text-blue-600">
-                    {Math.max(200, 2000 - (aiElo - 400) * 0.7).toFixed(0)}ms
-                  </div>
+          {/* Right Side - Game Setup */}
+          <div className="bg-white rounded-lg shadow-2xl p-6">
+            <div className="space-y-8">
+              {/* ELO Slider */}
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <label htmlFor="elo-slider" className="text-lg font-semibold text-gray-700">
+                    AI Difficulty (ELO Rating)
+                  </label>
+                  <span className="text-2xl font-bold text-purple-600">{aiElo}</span>
                 </div>
-                <div className="bg-white rounded p-3">
-                  <div className="font-semibold text-gray-700">Search Depth</div>
-                  <div className="text-blue-600">
-                    {Math.max(1, Math.floor((aiElo - 400) / 400) + 1)} moves
-                  </div>
+                
+                <input
+                  type="range"
+                  id="elo-slider"
+                  min="400"
+                  max="2800"
+                  step="50"
+                  value={aiElo}
+                  onChange={(e) => setAiElo(parseInt(e.target.value))}
+                  className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${((aiElo - 400) / 2400) * 100}%, #e5e7eb ${((aiElo - 400) / 2400) * 100}%, #e5e7eb 100%)`
+                  }}
+                />
+                
+                <div className="flex justify-between text-sm text-gray-500 mt-2">
+                  <span>400 (Beginner)</span>
+                  <span>2800 (Master)</span>
                 </div>
-                <div className="bg-white rounded p-3">
-                  <div className="font-semibold text-gray-700">Accuracy</div>
-                  <div className="text-blue-600">
-                    {Math.max(0.3, Math.min(1.0, (aiElo - 400) / 2000) * 100).toFixed(0)}%
-                  </div>
-                </div>
-                <div className="bg-white rounded p-3">
-                  <div className="font-semibold text-gray-700">Aggressiveness</div>
-                  <div className="text-blue-600">
-                    {Math.max(0.2, Math.min(1.0, (aiElo - 400) / 1500) * 100).toFixed(0)}%
+              </div>
+
+              {/* Current Difficulty Display */}
+              <div className="bg-gray-50 rounded-lg p-6">
+                <div className="text-center">
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">
+                    {currentRange.label} Level
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    {currentRange.description}
+                  </p>
+                  
+                  {/* Difficulty Stats */}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="bg-white rounded p-3">
+                      <div className="font-semibold text-gray-700">Reaction Time</div>
+                      <div className="text-purple-600">
+                        {Math.max(200, 2000 - (aiElo - 400) * 0.7).toFixed(0)}ms
+                      </div>
+                    </div>
+                    <div className="bg-white rounded p-3">
+                      <div className="font-semibold text-gray-700">Search Depth</div>
+                      <div className="text-purple-600">
+                        {Math.max(1, Math.floor((aiElo - 400) / 400) + 1)} moves
+                      </div>
+                    </div>
+                    <div className="bg-white rounded p-3">
+                      <div className="font-semibold text-gray-700">Accuracy</div>
+                      <div className="text-purple-600">
+                        {Math.max(0.3, Math.min(1.0, (aiElo - 400) / 2000) * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                    <div className="bg-white rounded p-3">
+                      <div className="font-semibold text-gray-700">Aggressiveness</div>
+                      <div className="text-purple-600">
+                        {Math.max(0.2, Math.min(1.0, (aiElo - 400) / 1500) * 100).toFixed(0)}%
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Player Color Selection */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Choose Your Color</h3>
-            <div className="flex gap-4">
-              <button
-                onClick={() => setPlayerColor('white')}
-                className={`flex-1 p-4 rounded-lg border-2 transition-all duration-200 ${
-                  playerColor === 'white'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">♔</div>
-                  <div className="font-semibold">White</div>
-                  <div className="text-sm opacity-75">You go first</div>
+              {/* Player Color Selection */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-4">Choose Your Color</h3>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setPlayerColor('white')}
+                    className={`flex-1 p-4 rounded-lg border-2 transition-all duration-200 ${
+                      playerColor === 'white'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">♔</div>
+                      <div className="font-semibold">White</div>
+                      <div className="text-sm opacity-75">You go first</div>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => setPlayerColor('black')}
+                    className={`flex-1 p-4 rounded-lg border-2 transition-all duration-200 ${
+                      playerColor === 'black'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">♚</div>
+                      <div className="font-semibold">Black</div>
+                      <div className="text-sm opacity-75">AI goes first</div>
+                    </div>
+                  </button>
                 </div>
-              </button>
-              
-              <button
-                onClick={() => setPlayerColor('black')}
-                className={`flex-1 p-4 rounded-lg border-2 transition-all duration-200 ${
-                  playerColor === 'black'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">♚</div>
-                  <div className="font-semibold">Black</div>
-                  <div className="text-sm opacity-75">AI goes first</div>
-                </div>
-              </button>
+              </div>
+
+              {/* Game Rules Reminder */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-800 mb-2">Enhanced Game Rules</h4>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  <li>• Real-time gameplay with energy system</li>
+                  <li>• Each piece costs different energy amounts</li>
+                  <li>• Energy regeneration increases over time</li>
+                  <li>• Custom pieces have unique abilities</li>
+                  <li>• First to capture the opponent's king wins</li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={() => navigate('/')}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
+                >
+                  Back to Home
+                </button>
+                
+                <button
+                  onClick={handleStartGame}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
+                >
+                  Start Game
+                </button>
+              </div>
             </div>
-          </div>
-
-          {/* Game Rules Reminder */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h4 className="font-semibold text-yellow-800 mb-2">Real-time Chess Rules</h4>
-            <ul className="text-sm text-yellow-700 space-y-1">
-              <li>• No turns - move any available piece at any time</li>
-              <li>• Pieces have cooldown timers after moving</li>
-              <li>• First to capture the opponent's king wins</li>
-              <li>• Plan your moves around cooldown timings</li>
-            </ul>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-4">
-            <button
-              onClick={() => navigate('/')}
-              className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
-            >
-              Back to Home
-            </button>
-            
-            <button
-              onClick={handleStartGame}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
-            >
-              Start Game
-            </button>
           </div>
         </div>
       </div>
@@ -178,4 +229,4 @@ const AIGameSetup = () => {
   );
 };
 
-export default AIGameSetup;
+export default EnhancedAIGameSetup;
