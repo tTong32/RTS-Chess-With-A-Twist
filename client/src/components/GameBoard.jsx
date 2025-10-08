@@ -121,49 +121,6 @@ const GameBoard = ({ customBoard }) => {
   }, []);
 
 
-  const handleSquareClick = useCallback((row, col) => {
-    if (gameStatus !== 'playing') return; // Prevent interaction if game is over
-
-    const piece = board[row][col];
-    
-    // Select piece if it's current player's, on cooldown 0, and not already selected
-    if (piece && piece.color === currentPlayer && piece.cooldown === 0 && (!selectedPiece || selectedPiece.piece.color === piece.color)){
-      setSelectedPiece({ row, col, piece });
-      const moves = calculateValidMoves(board, row, col, piece);
-      setValidMoves(moves);
-      return;
-    }
-    
-    // If a piece is already selected, attempt to move it
-    if (selectedPiece) {
-      const isValid = validMoves.some(move => 
-        move.row === row && move.col === col
-      );
-      
-      if (isValid) {
-        movePiece(selectedPiece.row, selectedPiece.col, row, col);
-      }
-      
-      setSelectedPiece(null);
-      setValidMoves([]);
-    }
-  }, [board, selectedPiece, validMoves, currentPlayer, gameStatus, movePiece]); // Added all dependencies
-
-
-  // calculateValidMoves remains similar, but without check logic
-  const calculateValidMoves = useCallback((board, fromRow, fromCol, piece) => {
-    const moves = [];
-    for (let toRow = 0; toRow < 8; toRow++) {
-      for (let toCol = 0; toCol < 8; toCol++) {
-        if (isValidMove(board, fromRow, fromCol, toRow, toCol, piece)) {
-          moves.push({ row: toRow, col: toCol });
-        }
-      }
-    }
-    return moves;
-  }, [isValidMove]); // Depends on isValidMove
-
-
   const movePiece = useCallback((fromRow, fromCol, toRow, toCol) => {
     setBoard(prevBoard => {
       const newBoard = prevBoard.map(row => [...row]);
@@ -192,6 +149,49 @@ const GameBoard = ({ customBoard }) => {
       return newBoard;
     });
   }, [currentPlayer, showWinScreen, gameTime, gameStatus]); // Dependencies for movePiece
+
+
+  // calculateValidMoves remains similar, but without check logic
+  const calculateValidMoves = useCallback((board, fromRow, fromCol, piece) => {
+    const moves = [];
+    for (let toRow = 0; toRow < 8; toRow++) {
+      for (let toCol = 0; toCol < 8; toCol++) {
+        if (isValidMove(board, fromRow, fromCol, toRow, toCol, piece)) {
+          moves.push({ row: toRow, col: toCol });
+        }
+      }
+    }
+    return moves;
+  }, [isValidMove]); // Depends on isValidMove
+
+
+  const handleSquareClick = useCallback((row, col) => {
+    if (gameStatus !== 'playing') return; // Prevent interaction if game is over
+
+    const piece = board[row][col];
+    
+    // Select piece if it's current player's, on cooldown 0, and not already selected
+    if (piece && piece.color === currentPlayer && piece.cooldown === 0 && (!selectedPiece || selectedPiece.piece.color === piece.color)){
+      setSelectedPiece({ row, col, piece });
+      const moves = calculateValidMoves(board, row, col, piece);
+      setValidMoves(moves);
+      return;
+    }
+    
+    // If a piece is already selected, attempt to move it
+    if (selectedPiece) {
+      const isValid = validMoves.some(move => 
+        move.row === row && move.col === col
+      );
+      
+      if (isValid) {
+        movePiece(selectedPiece.row, selectedPiece.col, row, col);
+      }
+      
+      setSelectedPiece(null);
+      setValidMoves([]);
+    }
+  }, [board, selectedPiece, validMoves, currentPlayer, gameStatus, movePiece, calculateValidMoves]); // Added all dependencies
 
 
   const getCooldownPercentage = (piece) => {
@@ -304,6 +304,7 @@ const GameBoard = ({ customBoard }) => {
                   <div key={char} className="w-[60px] flex items-center justify-center">{char}</div>
               ))}
           </div>
+        </div>
         </div>
 
         {/* Right-side move history panel */}
