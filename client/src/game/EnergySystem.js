@@ -21,7 +21,7 @@ export class EnergySystem {
     this.regenerationSettings = {
       startingRate: 0.5, // energy per second
       maxRate: 10, // maximum energy per second
-      increaseInterval: 10000, // increase rate every 10 seconds
+      increaseInterval: 15000, // increase rate every 15 seconds
       increaseAmount: 0.5, // increase by 0.5 energy/sec each time
     };
     

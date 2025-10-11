@@ -8,7 +8,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // Vite dev server
+    origin: "http://localhost:3000", // Vite dev server
     methods: ["GET", "POST"]
   }
 });
@@ -101,18 +101,11 @@ class GameRoom {
     return player ? player.color : null;
   }
 
-  isPlayerTurn(playerId) {
-    const playerColor = this.getPlayerColor(playerId);
-    return playerColor === this.gameState.currentPlayer;
-  }
-
   makeMove(playerId, fromRow, fromCol, toRow, toCol) {
-    if (!this.isPlayerTurn(playerId)) {
-      return { success: false, error: 'Not your turn' };
-    }
-
+    const playerColor = this.getPlayerColor(playerId);
     const piece = this.gameState.board[fromRow][fromCol];
-    if (!piece || piece.color !== this.gameState.currentPlayer) {
+    
+    if (!piece || piece.color !== playerColor) {
       return { success: false, error: 'Invalid piece' };
     }
 
@@ -126,7 +119,7 @@ class GameRoom {
     
     // Check for king capture
     if (targetPiece && targetPiece.type === 'king') {
-      this.gameState.winner = this.gameState.currentPlayer;
+      this.gameState.winner = playerColor;
       this.gameState.gameStatus = 'finished';
     }
 
@@ -135,15 +128,12 @@ class GameRoom {
     this.gameState.moveHistory.push({ 
       move: algebraicMove, 
       time: (this.gameState.gameTime / 1000).toFixed(1),
-      player: this.gameState.currentPlayer
+      player: playerColor
     });
 
     // Update board
     this.gameState.board[toRow][toCol] = { ...piece, cooldown: piece.cooldownTime };
     this.gameState.board[fromRow][fromCol] = null;
-
-    // Switch turns
-    this.gameState.currentPlayer = this.gameState.currentPlayer === 'white' ? 'black' : 'white';
 
     return { success: true };
   }
@@ -179,7 +169,8 @@ io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
   // Create a new game room
-  socket.on('create-room', (playerName) => {
+  socket.on('create-room', (data) => {
+    const { playerName, customBoard } = data;
     const roomId = uuidv4().substring(0, 6).toUpperCase();
     const player = { id: socket.id, name: playerName, socket: socket };
     
@@ -195,14 +186,18 @@ io.on('connection', (socket) => {
 
   // Join an existing room
   socket.on('join-room', ({ roomId, playerName }) => {
+    console.log(`join-room request: roomId=${roomId}, playerName=${playerName}, socketId=${socket.id}`);
+    console.log(`Available rooms:`, Array.from(games.keys()));
     const game = games.get(roomId);
     
     if (!game) {
+      console.error(`Room ${roomId} not found!`);
       socket.emit('error', { message: 'Room not found' });
       return;
     }
     
     if (game.players.size >= 2) {
+      console.log(`Room ${roomId} is full`);
       socket.emit('error', { message: 'Room is full' });
       return;
     }
