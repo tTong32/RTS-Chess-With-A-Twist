@@ -56,15 +56,7 @@ function App() {
                     path="/setup" 
                     element={<GameSetup customBoard={customBoard} />} 
                 />
-                <Route 
-                    path="/board" 
-                    element={
-                        <BoardEditor 
-                            initialBoard={customBoard}
-                            onSaveBoard={setCustomBoard}
-                        />
-                    } 
-                />
+                <Route path="/board-editor" element={<BoardEditor />} />
                 <Route path="/multiplayer" element={<MultiplayerLobby />} />
                 <Route path="/multiplayer-game" element={<MultiplayerGame />} />
                 <Route path="/ai-setup" element={<AIGameSetup />} />

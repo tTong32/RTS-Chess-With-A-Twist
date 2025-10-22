@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import BoardEditorPanel from './BoardEditorPanel.jsx';
+import { CustomPieces } from '../game/CustomPieces.js';
+
+// Helper function to get piece symbol
+function getPieceSymbol(type) {
+  const customPieces = new CustomPieces();
+  return customPieces.getPieceInfo(type).symbol;
+}
 
 const EnhancedMultiplayerLobby = () => {
   const [socket, setSocket] = useState(null);
@@ -12,8 +18,19 @@ const EnhancedMultiplayerLobby = () => {
   const [error, setError] = useState('');
   const [gameData, setGameData] = useState(null);
   const [customBoard, setCustomBoard] = useState(null);
-  const [showBoardEditor, setShowBoardEditor] = useState(false);
   const navigate = useNavigate();
+
+  // Load saved board configuration from localStorage
+  useEffect(() => {
+    const savedBoard = localStorage.getItem('savedBoardConfiguration');
+    if (savedBoard) {
+      try {
+        setCustomBoard(JSON.parse(savedBoard));
+      } catch (error) {
+        console.error('Error loading saved board configuration:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Initialize socket connection
@@ -106,9 +123,6 @@ const EnhancedMultiplayerLobby = () => {
     });
   };
 
-  const handleBoardChange = (newBoard) => {
-    setCustomBoard(newBoard);
-  };
 
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-white">
@@ -154,6 +168,16 @@ const EnhancedMultiplayerLobby = () => {
               </svg>
               Multiplayer
             </button>
+            
+            <button 
+              onClick={() => navigate('/board-editor')}
+              className="w-full flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-[#404040] transition-colors"
+            >
+              <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
+              Board Editor
+            </button>
           </nav>
         </div>
 
@@ -194,41 +218,65 @@ const EnhancedMultiplayerLobby = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Side - Board Editor */}
+            {/* Left Side - Your Board */}
             <div className="bg-[#2c2c2c] rounded-xl border border-[#404040] p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Customize Your Board</h2>
+                <h2 className="text-2xl font-bold">Your Board</h2>
                 <button
-                  onClick={() => setShowBoardEditor(!showBoardEditor)}
-                  className={`px-4 py-2 rounded-lg font-semibold transition-colors duration-200 ${
-                    showBoardEditor 
-                      ? 'bg-[#404040] hover:bg-[#505050] text-white' 
-                      : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white'
-                  }`}
+                  onClick={() => navigate('/board-editor')}
+                  className="px-4 py-2 rounded-lg font-semibold transition-colors duration-200 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
                 >
-                  {showBoardEditor ? 'Hide Editor' : 'Show Editor'}
+                  Edit Board
                 </button>
               </div>
               
-              {showBoardEditor ? (
-                <div className="max-h-[600px] overflow-y-auto">
-                  <BoardEditorPanel
-                    initialBoard={customBoard}
-                    onBoardChange={handleBoardChange}
-                    playerColor="white"
-                  />
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <div className="text-6xl mb-4">♔</div>
-                  <p className="text-gray-400 mb-4">
-                    Customize your starting board with special pieces
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Click "Show Editor" to replace standard pieces with custom ones like Twisted Pawns, Flying Castles, and more!
-                  </p>
-                </div>
-              )}
+              <div className="text-center py-8">
+                {customBoard ? (
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-white mb-4">Your Custom Board</h4>
+                    <div className="flex justify-center">
+                      <div className="grid grid-cols-8 gap-1 border-2 border-gray-600 p-2 bg-[#404040]/20 rounded">
+                        {customBoard.map((row, rowIndex) => 
+                          row.map((cell, colIndex) => (
+                            <div
+                              key={`${rowIndex}-${colIndex}`}
+                              className={`w-8 h-8 flex items-center justify-center text-sm ${
+                                (rowIndex + colIndex) % 2 === 0 ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'
+                              }`}
+                            >
+                              {cell && (
+                                <span 
+                                  className={`${
+                                    cell.color === 'white' ? 'text-white' : 'text-black'
+                                  }`}
+                                  style={{
+                                    textShadow: cell.color === 'white' 
+                                      ? '1px 1px 2px black' 
+                                      : '1px 1px 2px white'
+                                  }}
+                                >
+                                  {getPieceSymbol(cell.type)}
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-300 mt-4">
+                      Your saved board configuration will be used for this multiplayer game.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="text-6xl mb-4">♔</div>
+                    <p className="text-gray-400 mb-4">Using standard chess board setup</p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Click "Edit Board" to create a custom board configuration.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right Side - Lobby Controls */}
