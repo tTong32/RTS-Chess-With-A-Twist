@@ -1,0 +1,3 @@
+- When playing as black, automatically flip the board. 
+- Rework the ice bishop so that instead of being able to pass through units, it instead increases the cooldown of all enemy pieces adjacent to the piece
+- Rework the flying castle so that it can only jump over a piece if its directly being blocked by the piece in the direction it's jumping in

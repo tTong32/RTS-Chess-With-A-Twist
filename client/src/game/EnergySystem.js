@@ -1,21 +1,10 @@
 // EnergySystem.js - Energy management with increasing regeneration
+import { CustomPieces } from './CustomPieces.js';
+
 export class EnergySystem {
   constructor() {
-    // Energy costs for each piece type
-    this.energyCosts = {
-      pawn: 2,
-      knight: 4,
-      bishop: 5,
-      rook: 6,
-      queen: 8,
-      king: 10,
-      
-      // Future custom pieces
-      'twisted-pawn': 3,
-      'flying-castle': 7,
-      'shadow-knight': 5,
-      'ice-bishop': 6,
-    };
+    // Import piece information including energy costs from CustomPieces
+    this.customPieces = new CustomPieces();
     
     // Energy regeneration settings
     this.regenerationSettings = {
@@ -32,9 +21,10 @@ export class EnergySystem {
     };
   }
 
-  // Get energy cost for a piece type
+  // Get energy cost for a piece type from CustomPieces
   getEnergyCost(pieceType) {
-    return this.energyCosts[pieceType] || 5; // Default cost if piece type not found
+    const pieceInfo = this.customPieces.getPieceInfo(pieceType);
+    return pieceInfo.energyCost || 5; // Default cost if piece type not found
   }
 
   // Calculate current regeneration rate based on game time
@@ -67,7 +57,10 @@ export class EnergySystem {
   // Get all pieces that can be moved with current energy
   getAffordablePieces(energy) {
     const affordable = [];
-    for (const [pieceType, cost] of Object.entries(this.energyCosts)) {
+    const allPieceTypes = this.customPieces.getAllPieceTypes();
+    
+    for (const pieceType of allPieceTypes) {
+      const cost = this.getEnergyCost(pieceType);
       if (energy >= cost) {
         affordable.push({ type: pieceType, cost });
       }

@@ -13,10 +13,10 @@ function getPieceSymbol(type) {
 const MultiplayerGame = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { roomId, playerColor, playerName, isHost } = location.state || {};
+  const { roomId, playerColor, playerName, isHost, customBoard } = location.state || {};
   
   const [socket, setSocket] = useState(null);
-  const [board, setBoard] = useState(Array(8).fill().map(() => Array(8).fill(null)));
+  const [board, setBoard] = useState(customBoard || Array(8).fill().map(() => Array(8).fill(null)));
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [gameState, setGameState] = useState({
@@ -28,7 +28,7 @@ const MultiplayerGame = () => {
   });
   const [players, setPlayers] = useState([]);
   const [error, setError] = useState('');
-  const [boardRotated, setBoardRotated] = useState(false);
+  const [boardRotated, setBoardRotated] = useState(playerColor === 'black');
   
   const [customPieces] = useState(new CustomPieces());
   const [energySystem] = useState(new EnergySystem());
@@ -318,6 +318,8 @@ const MultiplayerGame = () => {
           </div>
 
           {/* Game Stats */}
+          {gameState.gameStatus === 'playing' && (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="bg-[#2c2c2c] rounded-xl p-6 border border-[#404040]">
               <div className="flex items-center justify-between mb-2">
@@ -509,6 +511,8 @@ const MultiplayerGame = () => {
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
       </div>
 

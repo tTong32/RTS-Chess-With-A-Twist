@@ -28,7 +28,7 @@ function toAlgebraicNotation(fromR, fromC, toR, toC, pieceType) {
 const AIGame = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { aiElo, playerColor } = location.state || {};
+  const { aiElo, playerColor, customBoard } = location.state || {};
   
   const customPieces = useRef(new CustomPieces()).current;
   const energySystem = useRef(new EnergySystem()).current;
@@ -63,7 +63,7 @@ const AIGame = () => {
     return initialBoard;
   }, [customPieces]);
 
-  const [board, setBoard] = useState(() => initializeBoard());
+  const [board, setBoard] = useState(() => customBoard || initializeBoard());
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [gameTime, setGameTime] = useState(0);
@@ -74,7 +74,7 @@ const AIGame = () => {
   const [winColor, setWinColor] = useState('');
   const [ai, setAi] = useState(null);
   const [aiStatus, setAiStatus] = useState({ isThinking: false });
-  const [boardRotated, setBoardRotated] = useState(false);
+  const [boardRotated, setBoardRotated] = useState(playerColor === 'black');
   
   // Energy system state
   const [whiteEnergy, setWhiteEnergy] = useState(energySystem.energyLimits.startingEnergy);
@@ -248,6 +248,12 @@ const AIGame = () => {
       newBoard[toRow][toCol] = { ...piece, cooldown: piece.cooldownTime };
       // Clear the original square
       newBoard[fromRow][fromCol] = null;
+
+      // Trigger piece's special onMove effect if it has one
+      const pieceInfo = customPieces.getPieceInfo(piece.type);
+      if (pieceInfo.onMove) {
+        pieceInfo.onMove(newBoard, toRow, toCol, piece);
+      }
 
       return newBoard;
     });

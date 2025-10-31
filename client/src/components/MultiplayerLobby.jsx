@@ -33,8 +33,18 @@ const EnhancedMultiplayerLobby = () => {
   }, []);
 
   useEffect(() => {
-    // Initialize socket connection
-    const newSocket = io('http://localhost:3001');
+    // Check if we already have a socket to prevent duplicates
+    if (socket) {
+      console.log('Socket already exists, not creating new one');
+      return;
+    }
+
+    // Initialize socket connection ONCE when component mounts
+    console.log('Creating new socket connection');
+    const newSocket = io('http://localhost:3001', {
+      transports: ['websocket'],  // Force websocket to avoid polling duplicates
+      upgrade: false
+    });
     setSocket(newSocket);
 
     // Socket event listeners
@@ -45,15 +55,12 @@ const EnhancedMultiplayerLobby = () => {
       
       // Store socket and player info for game component
       window.multiplayerSocket = newSocket;
-      window.multiplayerPlayerName = playerName;
       
-      console.log('Navigating to game with state:', { ...data, playerName, isHost: true });
+      console.log('Navigating to game with state:', { ...data, isHost: true });
       navigate('/multiplayer-game', { 
         state: { 
-          ...data, 
-          playerName, 
-          isHost: true,
-          customBoard: customBoard
+          ...data,
+          isHost: true
         } 
       });
     });
@@ -65,14 +72,11 @@ const EnhancedMultiplayerLobby = () => {
       
       // Store socket and player info for game component
       window.multiplayerSocket = newSocket;
-      window.multiplayerPlayerName = playerName;
       
       navigate('/multiplayer-game', { 
         state: { 
-          ...data, 
-          playerName, 
-          isHost: false,
-          customBoard: customBoard
+          ...data,
+          isHost: false
         } 
       });
     });
@@ -86,11 +90,12 @@ const EnhancedMultiplayerLobby = () => {
 
     return () => {
       // Only close socket if we're not navigating to game
+      console.log('Lobby cleanup - closing socket?', !window.multiplayerSocket);
       if (!window.multiplayerSocket) {
         newSocket.close();
       }
     };
-  }, [navigate, customBoard, playerName]);
+  }, []); // Empty dependency array - only run once
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) {

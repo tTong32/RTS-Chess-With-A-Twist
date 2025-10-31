@@ -8,48 +8,54 @@ export class CustomPieces {
         symbol: '♙',
         description: 'Basic infantry unit',
         energyCost: 2,
-        cooldownTime: 3000,
-        isValidMove: this.isValidPawnMove.bind(this)
+        cooldownTime: 4000,
+        isValidMove: this.isValidPawnMove.bind(this),
+        maxCount: 8
       },
       knight: {
         name: 'Knight',
         symbol: '♘',
         description: 'Cavalry unit with L-shaped movement',
         energyCost: 4,
-        cooldownTime: 4000,
-        isValidMove: this.isValidKnightMove.bind(this)
+        cooldownTime: 5000,
+        isValidMove: this.isValidKnightMove.bind(this),
+        maxCount: 2
       },
       bishop: {
         name: 'Bishop',
         symbol: '♗',
         description: 'Diagonally moving unit',
         energyCost: 5,
-        cooldownTime: 5000,
-        isValidMove: this.isValidBishopMove.bind(this)
+        cooldownTime: 6000,
+        isValidMove: this.isValidBishopMove.bind(this),
+        maxCount: 2
       },
       rook: {
         name: 'Rook',
         symbol: '♖',
         description: 'Horizontally and vertically moving unit',
         energyCost: 6,
-        cooldownTime: 6000,
-        isValidMove: this.isValidRookMove.bind(this)
+        cooldownTime: 7000,
+        isValidMove: this.isValidRookMove.bind(this),
+        maxCount: 2
       },
       queen: {
         name: 'Queen',
         symbol: '♕',
         description: 'Most powerful unit, combines rook and bishop',
         energyCost: 8,
-        cooldownTime: 8000,
-        isValidMove: this.isValidQueenMove.bind(this)
+        cooldownTime: 9000,
+        isValidMove: this.isValidQueenMove.bind(this),
+        maxCount: 1
       },
       king: {
         name: 'King',
         symbol: '♔',
         description: 'Most important unit, moves one square in any direction',
         energyCost: 10,
-        cooldownTime: 10000,
-        isValidMove: this.isValidKingMove.bind(this)
+        cooldownTime: 11000,
+        isValidMove: this.isValidKingMove.bind(this),
+        maxCount: 1
       },
       
       // Custom pieces
@@ -59,15 +65,27 @@ export class CustomPieces {
         description: 'Pawn that can move diagonally forward and capture straight',
         energyCost: 3,
         cooldownTime: 3500,
-        isValidMove: this.isValidTwistedPawnMove.bind(this)
+        isValidMove: this.isValidTwistedPawnMove.bind(this),
+        maxCount: 8
+      },
+      'pawn-general': {
+        name: 'Pawn General',
+        symbol: '🇬',
+        description: 'A pawn that reduces the cooldown of all friendly adjacent pieces by 1.5 seconds. Can only have 2 on the board at a time.',
+        energyCost: 4,
+        cooldownTime: 5000,
+        isValidMove: this.isValidPawnMove.bind(this),
+        onMove: this.onPawnGeneralMove.bind(this),
+        maxCount: 2
       },
       'flying-castle': {
         name: 'Flying Castle',
         symbol: '🏰',
-        description: 'Rook that can jump over pieces',
-        energyCost: 7,
-        cooldownTime: 7000,
-        isValidMove: this.isValidFlyingCastleMove.bind(this)
+        description: 'Rook that can jump over a piece only if it directly blocks its path',
+        energyCost: 8,
+        cooldownTime: 6500,
+        isValidMove: this.isValidFlyingCastleMove.bind(this),
+        maxCount: 2
       },
       'shadow-knight': {
         name: 'Shadow Knight',
@@ -75,15 +93,18 @@ export class CustomPieces {
         description: 'Knight that can move through pieces',
         energyCost: 5,
         cooldownTime: 4500,
-        isValidMove: this.isValidShadowKnightMove.bind(this)
+        isValidMove: this.isValidShadowKnightMove.bind(this),
+        maxCount: 2
       },
       'ice-bishop': {
         name: 'Ice Bishop',
         symbol: '❄',
-        description: 'Bishop that freezes pieces it passes over',
+        description: 'Bishop that increases cooldown of adjacent enemy pieces by 3 seconds',
         energyCost: 6,
         cooldownTime: 5500,
-        isValidMove: this.isValidIceBishopMove.bind(this)
+        isValidMove: this.isValidIceBishopMove.bind(this),
+        onMove: this.onIceBishopMove.bind(this),
+        maxCount: 2
       }
     };
   }
@@ -187,36 +208,58 @@ export class CustomPieces {
       return board[toRow][toCol] && board[toRow][toCol].color !== piece.color;
     }
 
-    // Double move from starting position
-    if (fromCol === toCol && fromRow === startRow && toRow === fromRow + 2 * direction) {
-      return !board[fromRow + direction][toCol] && !board[toRow][toCol];
-    }
-
     return false;
   }
 
   isValidFlyingCastleMove(board, fromRow, fromCol, toRow, toCol) {
-    // Like a rook but can jump over pieces
+    // Like a rook but can only jump over ONE piece if it's directly blocking the destination
     if (fromRow !== toRow && fromCol !== toCol) return false;
 
-    // Check if path is clear (but allow jumping over pieces)
     if (fromRow === toRow) {
+      // Horizontal movement
       const step = toCol > fromCol ? 1 : -1;
+      let piecesInPath = [];
+      
+      // Collect all pieces in the path (excluding destination)
       for (let col = fromCol + step; col !== toCol; col += step) {
-        // Allow jumping over pieces, but not landing on friendly pieces
-        if (board[fromRow][col] && col === toCol - step) {
-          return board[fromRow][col].color !== board[fromRow][fromCol].color;
-        }
-      } 
-    } else {
-      const step = toRow > fromRow ? 1 : -1;
-      for (let row = fromRow + step; row !== toRow; row += step) {
-        if (board[row][fromCol] && row === toRow - step) {
-          return board[row][fromCol].color !== board[fromRow][fromCol].color;
+        if (board[fromRow][col]) {
+          piecesInPath.push({ row: fromRow, col });
         }
       }
+      
+      // Can only jump over one piece, and it must be directly adjacent to the destination
+      if (piecesInPath.length === 0) {
+        return true; // Clear path
+      } else if (piecesInPath.length === 1) {
+        const blockingPiece = piecesInPath[0];
+        // Check if the blocking piece is directly next to the destination
+        return Math.abs(blockingPiece.col - toCol) === 1;
+      } else {
+        return false; // More than one piece in the way
+      }
+    } else {
+      // Vertical movement
+      const step = toRow > fromRow ? 1 : -1;
+      let piecesInPath = [];
+      
+      // Collect all pieces in the path (excluding destination)
+      for (let row = fromRow + step; row !== toRow; row += step) {
+        if (board[row][fromCol]) {
+          piecesInPath.push({ row, col: fromCol });
+        }
+      }
+      
+      // Can only jump over one piece, and it must be directly adjacent to the destination
+      if (piecesInPath.length === 0) {
+        return true; // Clear path
+      } else if (piecesInPath.length === 1) {
+        const blockingPiece = piecesInPath[0];
+        // Check if the blocking piece is directly next to the destination
+        return Math.abs(blockingPiece.row - toRow) === 1;
+      } else {
+        return false; // More than one piece in the way
+      }
     }
-    return true;
   }
 
   isValidShadowKnightMove(board, fromRow, fromCol, toRow, toCol, piece) {
@@ -225,10 +268,54 @@ export class CustomPieces {
   }
 
   isValidIceBishopMove(board, fromRow, fromCol, toRow, toCol) {
-    // Like a bishop but can move through pieces
-    const rowDiff = Math.abs(fromRow - toRow);
-    const colDiff = Math.abs(fromCol - toCol);
-    return rowDiff === colDiff;
+    // Moves like a normal bishop (cannot pass through pieces)
+    return this.isValidBishopMove(board, fromRow, fromCol, toRow, toCol);
+  }
+
+  onIceBishopMove(board, toRow, toCol, piece) {
+    // Increase cooldown of all adjacent enemy pieces by 3 seconds
+    const directions = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+
+    directions.forEach(([dRow, dCol]) => {
+      const newRow = toRow + dRow;
+      const newCol = toCol + dCol;
+      
+      // Check if position is valid
+      if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+        const adjacentPiece = board[newRow][newCol];
+        // If there's an enemy piece, increase its cooldown
+        if (adjacentPiece && adjacentPiece.color !== piece.color) {
+          adjacentPiece.cooldown += 3000; // Add 3 seconds
+        }
+      }
+    });
+  }
+
+  onPawnGeneralMove(board, toRow, toCol, piece) {
+    // Reduce cooldown of all adjacent friendly pieces by 2 seconds
+    const directions = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+
+    directions.forEach(([dRow, dCol]) => {
+      const newRow = toRow + dRow;
+      const newCol = toCol + dCol;
+      
+      // Check if position is valid
+      if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+        const adjacentPiece = board[newRow][newCol];
+        // If there's a friendly piece, reduce its cooldown
+        if (adjacentPiece && adjacentPiece.color === piece.color) {
+          adjacentPiece.cooldown = Math.max(0, adjacentPiece.cooldown - 1500); // Reduce by 1.5 seconds
+        }
+      }
+    });
   }
 
   // Validate any piece move

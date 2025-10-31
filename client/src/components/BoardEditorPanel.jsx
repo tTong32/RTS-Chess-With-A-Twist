@@ -14,7 +14,7 @@ function categorizePieces(customPieces) {
   
   return {
     frontRow: allPieceTypes.filter(type => type === 'pawn').concat(
-      customPieceTypes.filter(type => ['twisted-pawn'].includes(type))
+      customPieceTypes.filter(type => ['twisted-pawn', 'pawn-general'].includes(type))
     ),
     backRow: allPieceTypes.filter(type => ['rook', 'knight', 'bishop', 'queen'].includes(type)).concat(
       customPieceTypes.filter(type => ['flying-castle', 'shadow-knight', 'ice-bishop'].includes(type))
@@ -25,7 +25,7 @@ function categorizePieces(customPieces) {
 
 // Helper function to get piece category
 function getPieceCategory(pieceType) {
-  if (pieceType === 'pawn' || pieceType === 'twisted-pawn') return 'frontRow';
+  if (pieceType === 'pawn' || pieceType === 'twisted-pawn' || pieceType === 'pawn-general') return 'frontRow';
   if (['rook', 'knight', 'bishop', 'queen', 'flying-castle', 'shadow-knight', 'ice-bishop'].includes(pieceType)) return 'backRow';
   if (pieceType === 'king') return 'king';
   return 'backRow'; // default
@@ -37,7 +37,7 @@ const LoadingIndicator = ({ isVisible, position }) => {
 
   return (
     <div 
-      className="absolute z-50 bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 shadow-lg"
+      className="fixed z-50 bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 shadow-lg"
       style={{
         top: position.top,
         left: position.left,
@@ -61,7 +61,7 @@ const PieceTooltip = ({ pieceInfo, isVisible, position, onMouseEnter, onMouseLea
 
   return (
     <div 
-      className="absolute z-50 bg-[#1a1a1a] border border-[#404040] rounded-lg p-3 shadow-lg max-w-xs"
+      className="fixed z-50 bg-[#1a1a1a] border border-[#404040] rounded-lg p-3 shadow-lg max-w-xs"
       style={{
         top: position.top,
         left: position.left,
@@ -94,9 +94,13 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
   const [loadingVisible, setLoadingVisible] = useState(false);
   const [loadingPosition, setLoadingPosition] = useState({ top: 0, left: 0 });
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [boardSize, setBoardSize] = useState(400); // Board size in pixels
   const [isResizing, setIsResizing] = useState(false);
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteText, setPasteText] = useState('');
   const tooltipTimeoutRef = useRef(null);
+  const tooltipHideTimeoutRef = useRef(null);
   const resizeRef = useRef(null);
   const tooltipDelay = 500;
 
@@ -114,6 +118,18 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
       setBoard(initialBoard);
     }
   }, [initialBoard]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (tooltipTimeoutRef.current) {
+        clearTimeout(tooltipTimeoutRef.current);
+      }
+      if (tooltipHideTimeoutRef.current) {
+        clearTimeout(tooltipHideTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function getStandardSetup() {
     const newBoard = initializeEmptyBoard();
@@ -192,12 +208,59 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
       return;
     }
 
+    // If a piece from panel is selected and clicking on an existing piece, swap if same category
+    if (selectedPieceType && piece && piece.color === playerColor) {
+      const panelPieceCategory = getPieceCategory(selectedPieceType);
+      const boardPieceCategory = getPieceCategory(piece.type);
+      
+      if (panelPieceCategory !== boardPieceCategory) {
+        setErrorMessage(`Cannot swap ${selectedPieceType} with ${piece.type}. Must be same category.`);
+        setTimeout(() => setErrorMessage(''), 3000);
+        return;
+      }
+      
+      // When swapping, we're replacing one piece with another, so check if the new piece type is at limit
+      // But only if they're different types
+      if (selectedPieceType !== piece.type && !canPlacePiece(selectedPieceType)) {
+        const pieceInfo = customPieces.getPieceInfo(selectedPieceType);
+        setErrorMessage(`Maximum ${pieceInfo.maxCount} ${pieceInfo.name}s allowed`);
+        setTimeout(() => setErrorMessage(''), 3000);
+        return;
+      }
+      
+      // Swap the panel piece with the board piece
+      const pieceInfo = customPieces.getPieceInfo(selectedPieceType);
+      const newBoard = board.map(row => [...row]);
+      
+      newBoard[row][col] = {
+        type: selectedPieceType,
+        color: playerColor,
+        cooldown: 0,
+        cooldownTime: pieceInfo.cooldownTime
+      };
+      
+      setBoard(newBoard);
+      onBoardChange(newBoard);
+      setSelectedSquare(null);
+      setSelectedPieceType(null);
+      setErrorMessage('');
+      return;
+    }
+
     if (piece && piece.color === playerColor) {
       // Select the piece on the board for swapping
       setSelectedSquare({ row, col });
       setSelectedPieceType(null); // Don't select in piece panel
     } else if (selectedPieceType) {
-      // Place new piece from panel
+      // Place new piece from panel (empty square)
+      // Check if we can place more of this piece type
+      if (!canPlacePiece(selectedPieceType)) {
+        const pieceInfo = customPieces.getPieceInfo(selectedPieceType);
+        setErrorMessage(`Maximum ${pieceInfo.maxCount} ${pieceInfo.name}s allowed`);
+        setTimeout(() => setErrorMessage(''), 3000);
+        return;
+      }
+      
       const pieceInfo = customPieces.getPieceInfo(selectedPieceType);
       const newBoard = board.map(row => [...row]);
       
@@ -260,6 +323,89 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
     setSelectedPieceType(null);
   };
 
+  const copyBoardConfiguration = () => {
+    try {
+      // Encode board as base64 JSON
+      const boardJSON = JSON.stringify(board);
+      const encoded = btoa(boardJSON);
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(encoded);
+      
+      setSuccessMessage('Board configuration copied to clipboard!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      setErrorMessage('Failed to copy board configuration');
+      setTimeout(() => setErrorMessage(''), 3000);
+    }
+  };
+
+  const pasteBoardConfiguration = () => {
+    try {
+      // Decode base64 JSON
+      const decoded = atob(pasteText.trim());
+      const parsedBoard = JSON.parse(decoded);
+      
+      // Validate board structure
+      if (!Array.isArray(parsedBoard) || parsedBoard.length !== 8) {
+        throw new Error('Invalid board format');
+      }
+      
+      setBoard(parsedBoard);
+      onBoardChange(parsedBoard);
+      setShowPasteModal(false);
+      setPasteText('');
+      setSuccessMessage('Board configuration loaded successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      setErrorMessage('Invalid board configuration text');
+      setTimeout(() => setErrorMessage(''), 3000);
+    }
+  };
+
+  // Helper function to check if a piece can be swapped with the selected piece/type
+  const canSwapWith = (piece) => {
+    if (!piece || piece.color !== playerColor) return false;
+    
+    if (selectedPieceType) {
+      // Panel piece is selected
+      const panelCategory = getPieceCategory(selectedPieceType);
+      const boardCategory = getPieceCategory(piece.type);
+      return panelCategory === boardCategory;
+    } else if (selectedSquare) {
+      // Board piece is selected
+      const selectedPiece = board[selectedSquare.row][selectedSquare.col];
+      if (!selectedPiece) return false;
+      const selectedCategory = getPieceCategory(selectedPiece.type);
+      const targetCategory = getPieceCategory(piece.type);
+      return selectedCategory === targetCategory;
+    }
+    
+    return false;
+  };
+
+  // Count how many pieces of a given type exist on the board for the player
+  const countPiecesOnBoard = (pieceType) => {
+    let count = 0;
+    for (let row = 6; row <= 7; row++) { // Only count editable rows
+      for (let col = 0; col < 8; col++) {
+        const piece = board[row][col];
+        if (piece && piece.type === pieceType && piece.color === playerColor) {
+          count++;
+        }
+      }
+    }
+    return count;
+  };
+
+  // Check if we can place more of this piece type
+  const canPlacePiece = (pieceType) => {
+    const pieceInfo = customPieces.getPieceInfo(pieceType);
+    if (!pieceInfo.maxCount) return true; // No limit
+    const currentCount = countPiecesOnBoard(pieceType);
+    return currentCount < pieceInfo.maxCount;
+  };
+
   const handlePieceHover = (pieceType, event) => {
     // Clear any existing timeout
     if (tooltipTimeoutRef.current) {
@@ -295,16 +441,32 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
       tooltipTimeoutRef.current = null;
     }
     setLoadingVisible(false);
-    // Don't hide tooltip immediately - let it stay visible
+    // Hide tooltip after a short delay when mouse leaves the piece button
+    // This allows moving mouse to the tooltip if desired
+    if (tooltipHideTimeoutRef.current) {
+      clearTimeout(tooltipHideTimeoutRef.current);
+    }
+    tooltipHideTimeoutRef.current = setTimeout(() => {
+      setTooltipVisible(false);
+      setTooltipPieceInfo(null);
+    }, 150);
   };
 
   const handleTooltipHover = () => {
     // Keep tooltip visible when hovering over it
     setLoadingVisible(false);
+    // Cancel any pending hide timeout
+    if (tooltipHideTimeoutRef.current) {
+      clearTimeout(tooltipHideTimeoutRef.current);
+      tooltipHideTimeoutRef.current = null;
+    }
   };
 
   const handleTooltipHoverEnd = () => {
-    // Hide tooltip when mouse leaves the tooltip
+    // Hide tooltip immediately when mouse leaves the tooltip
+    if (tooltipHideTimeoutRef.current) {
+      clearTimeout(tooltipHideTimeoutRef.current);
+    }
     setTooltipVisible(false);
     setTooltipPieceInfo(null);
   };
@@ -357,6 +519,13 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
         </div>
       )}
 
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-green-500/20 border border-green-500/50 text-green-400 px-4 py-3 rounded-lg">
+          {successMessage}
+        </div>
+      )}
+
       {/* Board with resize handle - Centered */}
       <div className="flex justify-center">
         <div className="flex flex-col relative" style={{ width: boardSize + 32 }}>
@@ -382,6 +551,7 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
                 const isSelected = selectedSquare && 
                   selectedSquare.row === rowIndex && selectedSquare.col === colIndex;
                 const isEditable = rowIndex >= 6 && rowIndex <= 7; // Only rows 1 and 2
+                const isSwappable = cell && canSwapWith(cell) && !isSelected;
                 
                 return (
                   <div
@@ -389,6 +559,8 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
                     className={`flex items-center justify-center border ${
                       (rowIndex + colIndex) % 2 === 0 ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'
                     } ${isSelected ? 'ring-2 ring-blue-500' : ''} ${
+                      isSwappable ? 'ring-2 ring-green-400 ring-opacity-70' : ''
+                    } ${
                       isEditable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
                     }`}
                     style={{
@@ -463,6 +635,8 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
             {pieceCategories.frontRow.map(pieceType => {
               const pieceInfo = customPieces.getPieceInfo(pieceType);
               const isSelected = selectedPieceType === pieceType;
+              const currentCount = countPiecesOnBoard(pieceType);
+              const atMaxCount = pieceInfo.maxCount && currentCount >= pieceInfo.maxCount;
               
               return (
                 <button
@@ -473,14 +647,22 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
                   className={`relative p-3 rounded-lg border text-center transition-all duration-200 ${
                     isSelected 
                       ? 'bg-blue-500 text-white border-blue-500' 
+                      : atMaxCount
+                      ? 'bg-[#303030] border-[#404040] text-gray-500 cursor-not-allowed'
                       : 'bg-[#404040] border-[#505050] hover:border-[#606060] text-white hover:bg-[#505050]'
                   }`}
+                  disabled={atMaxCount && !isSelected}
                 >
                   <div className="text-2xl mb-2">{pieceInfo.symbol}</div>
                   <div className="text-sm font-medium">{pieceInfo.name}</div>
                   <div className="text-xs opacity-75 mt-1">
                     <div>{pieceInfo.energyCost} energy</div>
                     <div>{pieceInfo.cooldownTime / 1000}s cooldown</div>
+                    {pieceInfo.maxCount && (
+                      <div className={`mt-1 font-semibold ${atMaxCount ? 'text-red-400' : 'text-green-400'}`}>
+                        {currentCount}/{pieceInfo.maxCount}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -495,6 +677,8 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
             {pieceCategories.backRow.map(pieceType => {
               const pieceInfo = customPieces.getPieceInfo(pieceType);
               const isSelected = selectedPieceType === pieceType;
+              const currentCount = countPiecesOnBoard(pieceType);
+              const atMaxCount = pieceInfo.maxCount && currentCount >= pieceInfo.maxCount;
               
               return (
                 <button
@@ -505,14 +689,22 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
                   className={`relative p-3 rounded-lg border text-center transition-all duration-200 ${
                     isSelected 
                       ? 'bg-blue-500 text-white border-blue-500' 
+                      : atMaxCount
+                      ? 'bg-[#303030] border-[#404040] text-gray-500 cursor-not-allowed'
                       : 'bg-[#404040] border-[#505050] hover:border-[#606060] text-white hover:bg-[#505050]'
                   }`}
+                  disabled={atMaxCount && !isSelected}
                 >
                   <div className="text-2xl mb-2">{pieceInfo.symbol}</div>
                   <div className="text-sm font-medium">{pieceInfo.name}</div>
                   <div className="text-xs opacity-75 mt-1">
                     <div>{pieceInfo.energyCost} energy</div>
                     <div>{pieceInfo.cooldownTime / 1000}s cooldown</div>
+                    {pieceInfo.maxCount && (
+                      <div className={`mt-1 font-semibold ${atMaxCount ? 'text-red-400' : 'text-green-400'}`}>
+                        {currentCount}/{pieceInfo.maxCount}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -527,6 +719,8 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
             {pieceCategories.king.map(pieceType => {
               const pieceInfo = customPieces.getPieceInfo(pieceType);
               const isSelected = selectedPieceType === pieceType;
+              const currentCount = countPiecesOnBoard(pieceType);
+              const atMaxCount = pieceInfo.maxCount && currentCount >= pieceInfo.maxCount;
               
               return (
                 <button
@@ -537,14 +731,22 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
                   className={`relative p-3 rounded-lg border text-center transition-all duration-200 ${
                     isSelected 
                       ? 'bg-blue-500 text-white border-blue-500' 
+                      : atMaxCount
+                      ? 'bg-[#303030] border-[#404040] text-gray-500 cursor-not-allowed'
                       : 'bg-[#404040] border-[#505050] hover:border-[#606060] text-white hover:bg-[#505050]'
                   }`}
+                  disabled={atMaxCount && !isSelected}
                 >
                   <div className="text-2xl mb-2">{pieceInfo.symbol}</div>
                   <div className="text-sm font-medium">{pieceInfo.name}</div>
                   <div className="text-xs opacity-75 mt-1">
                     <div>{pieceInfo.energyCost} energy</div>
                     <div>{pieceInfo.cooldownTime / 1000}s cooldown</div>
+                    {pieceInfo.maxCount && (
+                      <div className={`mt-1 font-semibold ${atMaxCount ? 'text-red-400' : 'text-green-400'}`}>
+                        {currentCount}/{pieceInfo.maxCount}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -559,7 +761,19 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
           onClick={resetToStandard}
           className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-6 rounded-lg text-sm font-medium transition-colors"
         >
-          Reset to Standard
+          Reset to Default
+        </button>
+        <button
+          onClick={copyBoardConfiguration}
+          className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-6 rounded-lg text-sm font-medium transition-colors"
+        >
+          Copy Configuration
+        </button>
+        <button
+          onClick={() => setShowPasteModal(true)}
+          className="bg-green-500 hover:bg-green-600 text-white py-2 px-6 rounded-lg text-sm font-medium transition-colors"
+        >
+          Paste Configuration
         </button>
       </div>
 
@@ -577,6 +791,42 @@ const BoardEditorPanel = ({ initialBoard, onBoardChange, playerColor = 'white' }
         onMouseEnter={handleTooltipHover}
         onMouseLeave={handleTooltipHoverEnd}
       />
+
+      {/* Paste Modal */}
+      {showPasteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#2c2c2c] border border-[#404040] rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-white mb-4">Paste Board Configuration</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Paste the encoded board configuration text below:
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Paste configuration here..."
+              className="w-full h-32 bg-[#1a1a1a] border border-[#404040] rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none"
+            />
+            <div className="flex justify-end space-x-3 mt-4">
+              <button
+                onClick={() => {
+                  setShowPasteModal(false);
+                  setPasteText('');
+                }}
+                className="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={pasteBoardConfiguration}
+                disabled={!pasteText.trim()}
+                className="bg-green-500 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+              >
+                Load Configuration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

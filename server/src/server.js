@@ -21,11 +21,11 @@ const games = new Map();
 
 // Game state management
 class GameRoom {
-  constructor(roomId, hostPlayer) {
+  constructor(roomId, hostPlayer, customBoard = null) {
     this.roomId = roomId;
     this.players = new Map();
     this.gameState = {
-      board: this.initializeBoard(),
+      board: customBoard || this.initializeBoard(),
       currentPlayer: 'white',
       gameStatus: 'waiting', // 'waiting', 'playing', 'finished'
       moveHistory: [],
@@ -135,7 +135,60 @@ class GameRoom {
     this.gameState.board[toRow][toCol] = { ...piece, cooldown: piece.cooldownTime };
     this.gameState.board[fromRow][fromCol] = null;
 
+    // Apply piece special effects
+    if (piece.type === 'ice-bishop') {
+      this.applyIceBishopEffect(toRow, toCol, piece);
+    } else if (piece.type === 'pawn-general') {
+      this.applyPawnGeneralEffect(toRow, toCol, piece);
+    }
+
     return { success: true };
+  }
+
+  applyIceBishopEffect(toRow, toCol, piece) {
+    // Increase cooldown of all adjacent enemy pieces by 3 seconds
+    const directions = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+
+    directions.forEach(([dRow, dCol]) => {
+      const newRow = toRow + dRow;
+      const newCol = toCol + dCol;
+      
+      // Check if position is valid
+      if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+        const adjacentPiece = this.gameState.board[newRow][newCol];
+        // If there's an enemy piece, increase its cooldown
+        if (adjacentPiece && adjacentPiece.color !== piece.color) {
+          adjacentPiece.cooldown += 3000; // Add 3 seconds
+        }
+      }
+    });
+  }
+
+  applyPawnGeneralEffect(toRow, toCol, piece) {
+    // Reduce cooldown of all adjacent friendly pieces by 2 seconds
+    const directions = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+
+    directions.forEach(([dRow, dCol]) => {
+      const newRow = toRow + dRow;
+      const newCol = toCol + dCol;
+      
+      // Check if position is valid
+      if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+        const adjacentPiece = this.gameState.board[newRow][newCol];
+        // If there's a friendly piece, reduce its cooldown
+        if (adjacentPiece && adjacentPiece.color === piece.color) {
+          adjacentPiece.cooldown = Math.max(0, adjacentPiece.cooldown - 2000); // Reduce by 2 seconds
+        }
+      }
+    });
   }
 
   toAlgebraicNotation(fromR, fromC, toR, toC, pieceType) {
@@ -172,16 +225,16 @@ io.on('connection', (socket) => {
   socket.on('create-room', (data) => {
     const { playerName, customBoard } = data;
     const roomId = uuidv4().substring(0, 6).toUpperCase();
-    const player = { id: socket.id, name: playerName, socket: socket };
+    const player = { id: socket.id, name: playerName, socket: socket, color: 'white' };
     
-    const game = new GameRoom(roomId, player);
+    const game = new GameRoom(roomId, player, customBoard);
     games.set(roomId, game);
     
     socket.join(roomId);
-    socket.emit('room-created', { roomId, playerColor: 'white' });
+    socket.emit('room-created', { roomId, playerColor: 'white', playerName, customBoard });
     socket.emit('game-state', game.gameState);
     
-    console.log(`Room ${roomId} created by ${playerName}`);
+    console.log(`Room ${roomId} created by ${playerName}${customBoard ? ' with custom board' : ''}`);
   });
 
   // Join an existing room
@@ -196,17 +249,28 @@ io.on('connection', (socket) => {
       return;
     }
     
+    // Check if this socket is already in the room
+    if (game.players.has(socket.id)) {
+      console.log(`Socket ${socket.id} is already in room ${roomId}, sending current state`);
+      const player = game.players.get(socket.id);
+      socket.join(roomId);
+      socket.emit('room-joined', { roomId, playerColor: player.color, playerName: player.name });
+      socket.emit('game-state', game.gameState);
+      return;
+    }
+    
     if (game.players.size >= 2) {
       console.log(`Room ${roomId} is full`);
       socket.emit('error', { message: 'Room is full' });
       return;
     }
     
-    const player = { id: socket.id, name: playerName, socket: socket };
+    const playerColor = game.players.size === 0 ? 'white' : 'black';
+    const player = { id: socket.id, name: playerName, socket: socket, color: playerColor };
     game.addPlayer(player);
     
     socket.join(roomId);
-    socket.emit('room-joined', { roomId, playerColor: player.color });
+    socket.emit('room-joined', { roomId, playerColor: player.color, playerName });
     socket.emit('game-state', game.gameState);
     
     // Notify all players in the room
