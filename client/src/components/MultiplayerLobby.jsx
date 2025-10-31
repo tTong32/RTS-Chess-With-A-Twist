@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { CustomPieces } from '../game/CustomPieces.js';
+import { SERVER_URL } from '../config.js';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
@@ -40,8 +41,8 @@ const EnhancedMultiplayerLobby = () => {
     }
 
     // Initialize socket connection ONCE when component mounts
-    console.log('Creating new socket connection');
-    const newSocket = io('http://localhost:3001', {
+    console.log('Creating new socket connection to:', SERVER_URL);
+    const newSocket = io(SERVER_URL, {
       transports: ['websocket'],  // Force websocket to avoid polling duplicates
       upgrade: false
     });

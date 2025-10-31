@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { CustomPieces } from '../game/CustomPieces.js';
 import { EnergySystem } from '../game/EnergySystem.js';
+import { SERVER_URL } from '../config.js';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
@@ -72,8 +73,9 @@ const MultiplayerGame = () => {
     const existingSocket = window.multiplayerSocket;
     const savedPlayerName = window.multiplayerPlayerName || playerName;
     console.log('Existing socket?', !!existingSocket, 'Player name:', savedPlayerName);
+    console.log('Server URL:', SERVER_URL);
     
-    const newSocket = existingSocket || io('http://localhost:3001');
+    const newSocket = existingSocket || io(SERVER_URL);
     setSocket(newSocket);
     
     // Clear the global references
