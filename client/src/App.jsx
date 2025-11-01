@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Home from './components/Home.jsx';
 import GameSetup from './components/GameSetup.jsx';
 import BoardEditor from './components/BoardEditor.jsx';
-import GameBoard from './components/gameboard.jsx';
+import GameBoard from './components/GameBoard.jsx';
 import MultiplayerLobby from './components/MultiplayerLobby.jsx';
 import MultiplayerGame from './components/MultiplayerGame.jsx';
 import AIGameSetup from './components/AIGameSetup.jsx';
