@@ -1,6 +1,7 @@
 // App.jsx
 import React, { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext.jsx';
 import Home from './components/Home.jsx';
 import GameSetup from './components/GameSetup.jsx';
 import BoardEditor from './components/BoardEditor.jsx';
@@ -45,24 +46,26 @@ function App() {
     const [customBoard, setCustomBoard] = useState(initializeDefaultBoard());
 
     return (
-        <BrowserRouter>
-            <Routes>
-                <Route path="/" element={<Home />} />
-                <Route 
-                    path="/game" 
-                    element={<GameBoard customBoard={customBoard} />} 
-                />
-                <Route 
-                    path="/setup" 
-                    element={<GameSetup customBoard={customBoard} />} 
-                />
-                <Route path="/board-editor" element={<BoardEditor />} />
-                <Route path="/multiplayer" element={<MultiplayerLobby />} />
-                <Route path="/multiplayer-game" element={<MultiplayerGame />} />
-                <Route path="/ai-setup" element={<AIGameSetup />} />
-                <Route path="/ai-game" element={<AIGame />} />
-            </Routes>
-        </BrowserRouter>
+        <AuthProvider>
+            <BrowserRouter>
+                <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route 
+                        path="/game" 
+                        element={<GameBoard customBoard={customBoard} />} 
+                    />
+                    <Route 
+                        path="/setup" 
+                        element={<GameSetup customBoard={customBoard} />} 
+                    />
+                    <Route path="/board-editor" element={<BoardEditor />} />
+                    <Route path="/multiplayer" element={<MultiplayerLobby />} />
+                    <Route path="/multiplayer-game" element={<MultiplayerGame />} />
+                    <Route path="/ai-setup" element={<AIGameSetup />} />
+                    <Route path="/ai-game" element={<AIGame />} />
+                </Routes>
+            </BrowserRouter>
+        </AuthProvider>
     );
 }
 

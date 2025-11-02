@@ -19,6 +19,177 @@ app.use(express.json());
 // Store active games
 const games = new Map();
 
+// In-memory user database (in production, use a real database)
+const users = new Map(); // userId -> user object
+
+// API Routes for authentication and user data
+app.post('/api/signup', (req, res) => {
+  const { username, email, password } = req.body;
+  
+  if (!username || !email || !password) {
+    return res.status(400).json({ success: false, error: 'Missing required fields' });
+  }
+  
+  // Check if user already exists
+  for (const [_, user] of users.entries()) {
+    if (user.email === email || user.username === username) {
+      return res.status(400).json({ success: false, error: 'User already exists' });
+    }
+  }
+  
+  const userId = uuidv4();
+  const newUser = {
+    id: userId,
+    username,
+    email,
+    password, // In production, hash this!
+    createdAt: new Date().toISOString(),
+    stats: {
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      rating: 1200
+    },
+    recentGames: [],
+    customBoard: null
+  };
+  
+  users.set(userId, newUser);
+  
+  res.json({ 
+    success: true, 
+    user: {
+      id: newUser.id,
+      username: newUser.username,
+      email: newUser.email,
+      stats: newUser.stats
+    },
+    token: userId // In production, use JWT tokens
+  });
+});
+
+app.post('/api/login', (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: 'Missing email or password' });
+  }
+  
+  // Find user by email
+  let foundUser = null;
+  for (const [_, user] of users.entries()) {
+    if (user.email === email && user.password === password) {
+      foundUser = user;
+      break;
+    }
+  }
+  
+  if (!foundUser) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+  
+  res.json({ 
+    success: true, 
+    user: {
+      id: foundUser.id,
+      username: foundUser.username,
+      email: foundUser.email,
+      stats: foundUser.stats
+    },
+    token: foundUser.id
+  });
+});
+
+app.get('/api/user/:userId', (req, res) => {
+  const { userId } = req.params;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  res.json({ 
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      stats: user.stats,
+      recentGames: user.recentGames
+    }
+  });
+});
+
+app.get('/api/user/:userId/custom-board', (req, res) => {
+  const { userId } = req.params;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  res.json({ 
+    success: true,
+    customBoard: user.customBoard
+  });
+});
+
+app.post('/api/user/:userId/custom-board', (req, res) => {
+  const { userId } = req.params;
+  const { customBoard } = req.body;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  user.customBoard = customBoard;
+  users.set(userId, user);
+  
+  res.json({ success: true });
+});
+
+app.post('/api/user/:userId/game-result', (req, res) => {
+  const { userId } = req.params;
+  const { result, opponent, duration, mode } = req.body; // result: 'win', 'loss', 'draw'
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  // Update stats
+  user.stats.gamesPlayed++;
+  if (result === 'win') {
+    user.stats.wins++;
+    user.stats.rating = Math.min(2800, user.stats.rating + 15);
+  } else if (result === 'loss') {
+    user.stats.losses++;
+    user.stats.rating = Math.max(400, user.stats.rating - 15);
+  } else {
+    user.stats.draws++;
+  }
+  
+  // Add to recent games
+  const gameEntry = {
+    opponent,
+    result,
+    duration,
+    mode,
+    date: new Date().toISOString()
+  };
+  
+  user.recentGames.unshift(gameEntry);
+  if (user.recentGames.length > 10) {
+    user.recentGames = user.recentGames.slice(0, 10);
+  }
+  
+  users.set(userId, user);
+  
+  res.json({ success: true, stats: user.stats });
+});
+
 // Game state management
 class GameRoom {
   constructor(roomId, hostPlayer, customBoard = null) {

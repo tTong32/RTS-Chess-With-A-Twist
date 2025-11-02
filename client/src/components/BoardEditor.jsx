@@ -1,22 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BoardEditorPanel from './BoardEditorPanel.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 const BoardEditor = () => {
   const navigate = useNavigate();
+  const { user, fetchCustomBoard, saveCustomBoard } = useAuth();
   const [customBoard, setCustomBoard] = useState(null);
 
-  // Load saved board configuration from localStorage
+  // Load saved board configuration from user account or localStorage
   useEffect(() => {
-    const savedBoard = localStorage.getItem('savedBoardConfiguration');
-    if (savedBoard) {
-      try {
-        setCustomBoard(JSON.parse(savedBoard));
-      } catch (error) {
-        console.error('Error loading saved board configuration:', error);
+    const loadBoard = async () => {
+      if (user) {
+        // Try to load from server
+        const serverBoard = await fetchCustomBoard();
+        if (serverBoard) {
+          setCustomBoard(serverBoard);
+          return;
+        }
       }
-    }
-  }, []);
+      
+      // Fallback to localStorage
+      const savedBoard = localStorage.getItem('savedBoardConfiguration');
+      if (savedBoard) {
+        try {
+          setCustomBoard(JSON.parse(savedBoard));
+        } catch (error) {
+          console.error('Error loading saved board configuration:', error);
+        }
+      }
+    };
+    
+    loadBoard();
+  }, [user]);
 
   const handleBoardChange = (newBoard) => {
     setCustomBoard(newBoard);
@@ -46,7 +62,7 @@ const BoardEditor = () => {
     return { isValid: true };
   };
 
-  const handleSaveBoard = () => {
+  const handleSaveBoard = async () => {
     if (!customBoard) {
       alert('No board configuration to save');
       return;
@@ -58,14 +74,30 @@ const BoardEditor = () => {
       return;
     }
 
-    localStorage.setItem('savedBoardConfiguration', JSON.stringify(customBoard));
-    // Show success message or notification
-    alert('Board configuration saved successfully!');
+    // Save to user account if logged in
+    if (user) {
+      const result = await saveCustomBoard(customBoard);
+      if (result.success) {
+        alert('Board configuration saved to your account!');
+      } else {
+        alert('Failed to save to account. Saving locally instead.');
+        localStorage.setItem('savedBoardConfiguration', JSON.stringify(customBoard));
+      }
+    } else {
+      // Save to localStorage
+      localStorage.setItem('savedBoardConfiguration', JSON.stringify(customBoard));
+      alert('Board configuration saved locally! Sign in to sync across devices.');
+    }
   };
 
-  const handleClearBoard = () => {
+  const handleClearBoard = async () => {
     setCustomBoard(null);
     localStorage.removeItem('savedBoardConfiguration');
+    
+    // Clear from account if logged in
+    if (user) {
+      await saveCustomBoard(null);
+    }
   };
 
   return (
