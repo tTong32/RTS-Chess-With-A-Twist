@@ -49,7 +49,7 @@ app.post('/api/signup', (req, res) => {
       wins: 0,
       losses: 0,
       draws: 0,
-      rating: 1200
+      rating: 1000
     },
     recentGames: [],
     customBoard: null

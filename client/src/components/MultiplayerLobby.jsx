@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { CustomPieces } from '../game/CustomPieces.js';
+import { initializeDefaultBoard } from '../App.jsx';
 import { SERVER_URL } from '../config.js';
 
 // Helper function to get piece symbol
@@ -19,6 +20,7 @@ const EnhancedMultiplayerLobby = () => {
   const [error, setError] = useState('');
   const [gameData, setGameData] = useState(null);
   const [customBoard, setCustomBoard] = useState(null);
+  const [displayBoard, setDisplayBoard] = useState(null);
   const navigate = useNavigate();
 
   // Load saved board configuration from localStorage
@@ -26,10 +28,15 @@ const EnhancedMultiplayerLobby = () => {
     const savedBoard = localStorage.getItem('savedBoardConfiguration');
     if (savedBoard) {
       try {
-        setCustomBoard(JSON.parse(savedBoard));
+        const parsedBoard = JSON.parse(savedBoard);
+        setCustomBoard(parsedBoard);
+        setDisplayBoard(parsedBoard);
       } catch (error) {
         console.error('Error loading saved board configuration:', error);
+        setDisplayBoard(initializeDefaultBoard());
       }
+    } else {
+      setDisplayBoard(initializeDefaultBoard());
     }
   }, []);
 
@@ -237,12 +244,12 @@ const EnhancedMultiplayerLobby = () => {
               </div>
               
               <div className="text-center py-8">
-                {customBoard ? (
+                {displayBoard && (
                   <div className="space-y-4">
-                    <h4 className="font-semibold text-white mb-4">Your Custom Board</h4>
+                    <h4 className="font-semibold text-white mb-4">{customBoard ? 'Your Custom Board' : 'Default Board'}</h4>
                     <div className="flex justify-center">
                       <div className="grid grid-cols-8 gap-1 border-2 border-gray-600 p-2 bg-[#404040]/20 rounded">
-                        {customBoard.map((row, rowIndex) => 
+                        {displayBoard.map((row, rowIndex) => 
                           row.map((cell, colIndex) => (
                             <div
                               key={`${rowIndex}-${colIndex}`}
@@ -270,15 +277,7 @@ const EnhancedMultiplayerLobby = () => {
                       </div>
                     </div>
                     <p className="text-sm text-gray-300 mt-4">
-                      Your saved board configuration will be used for this multiplayer game.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="text-6xl mb-4">♔</div>
-                    <p className="text-gray-400 mb-4">Using standard chess board setup</p>
-                    <p className="text-sm text-gray-500 mb-4">
-                      Click "Edit Board" to create a custom board configuration.
+                      {customBoard ? 'Your saved board configuration will be used for this multiplayer game.' : 'Click "Edit Board" to create a custom board configuration.'}
                     </p>
                   </div>
                 )}
@@ -342,29 +341,6 @@ const EnhancedMultiplayerLobby = () => {
                       {isJoiningRoom ? 'Joining Room...' : 'Join Room'}
                     </button>
                   </div>
-                </div>
-
-                {/* Game Info */}
-                <div className="border-t border-[#404040] pt-6 bg-[#404040]/30 rounded-lg p-4">
-                  <h3 className="font-semibold mb-3">Game Features</h3>
-                  <ul className="text-sm text-gray-300 space-y-2">
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-400 rounded-full mr-3"></div>
-                      Real-time gameplay with energy system
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full mr-3"></div>
-                      Custom pieces with unique abilities
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full mr-3"></div>
-                      Progressive energy regeneration
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-orange-400 rounded-full mr-3"></div>
-                      Strategic resource management
-                    </li>
-                  </ul>
                 </div>
 
                 {/* Back to Home */}

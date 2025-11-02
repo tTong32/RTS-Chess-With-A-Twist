@@ -278,7 +278,7 @@ const Home = () => {
                       </svg>
                     </div>
                   </div>
-                  <div className="text-3xl font-bold mb-2">{user.stats.rating || 1200}</div>
+                  <div className="text-3xl font-bold mb-2">{user.stats.rating || 1000}</div>
                 </div>
               </div>
 
