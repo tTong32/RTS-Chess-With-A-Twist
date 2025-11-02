@@ -14,7 +14,12 @@ function getPieceSymbol(type) {
 const MultiplayerGame = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { roomId, playerColor, playerName, isHost, customBoard } = location.state || {};
+  const searchParams = new URLSearchParams(location.search);
+  const isSpectating = searchParams.get('spectate') === 'true';
+  const spectateRoomId = searchParams.get('room');
+  const { roomId, playerColor, playerName, isHost, customBoard, spectating } = location.state || {};
+  
+  const actualRoomId = isSpectating ? spectateRoomId : roomId;
   
   const [socket, setSocket] = useState(null);
   const [board, setBoard] = useState(customBoard || Array(8).fill().map(() => Array(8).fill(null)));
@@ -61,13 +66,19 @@ const MultiplayerGame = () => {
   }, [gameState.gameStatus, gameState.gameTime, energySystem, lastEnergyUpdate]);
 
   useEffect(() => {
-    if (!roomId || !playerColor) {
+    if (!isSpectating && (!roomId || !playerColor)) {
       console.log('Missing roomId or playerColor, redirecting...', { roomId, playerColor });
       navigate('/multiplayer');
       return;
     }
 
-    console.log('MultiplayerGame mounting with:', { roomId, playerColor, playerName, isHost });
+    if (isSpectating && !actualRoomId) {
+      console.log('Missing spectate roomId, redirecting...');
+      navigate('/spectate');
+      return;
+    }
+
+    console.log('MultiplayerGame mounting with:', { roomId: actualRoomId, playerColor, playerName, isHost, isSpectating });
 
     // Use existing socket from lobby or create new one
     const existingSocket = window.multiplayerSocket;
@@ -78,13 +89,20 @@ const MultiplayerGame = () => {
     const newSocket = existingSocket || io(SERVER_URL);
     setSocket(newSocket);
     
-    // Clear the global references
-    if (existingSocket) {
-      window.multiplayerSocket = null;
-      window.multiplayerPlayerName = null;
-      console.log('Reusing socket from lobby, already in room:', roomId);
+    // Handle spectating or joining
+    if (isSpectating) {
+      // Spectate mode - just listen to game state
+      newSocket.emit('spectate-game', { roomId: actualRoomId });
+      console.log('Spectating room:', actualRoomId);
     } else {
-      console.log('Creating new socket and joining room:', roomId);
+      // Clear the global references
+      if (existingSocket) {
+        window.multiplayerSocket = null;
+        window.multiplayerPlayerName = null;
+        console.log('Reusing socket from lobby, already in room:', actualRoomId);
+      } else {
+        console.log('Creating new socket and joining room:', actualRoomId);
+      }
     }
 
     // Socket event listeners
@@ -116,10 +134,10 @@ const MultiplayerGame = () => {
       setError(data.message);
     });
 
-    // Only join the room if this is a new socket (not from lobby)
-    if (!existingSocket) {
-      console.log('Emitting join-room:', { roomId, playerName: savedPlayerName });
-      newSocket.emit('join-room', { roomId, playerName: savedPlayerName });
+    // Only join the room if this is a new socket (not from lobby) and not spectating
+    if (!existingSocket && !isSpectating) {
+      console.log('Emitting join-room:', { roomId: actualRoomId, playerName: savedPlayerName });
+      newSocket.emit('join-room', { roomId: actualRoomId, playerName: savedPlayerName });
     }
 
     return () => {
@@ -127,7 +145,7 @@ const MultiplayerGame = () => {
       console.log('MultiplayerGame cleanup running');
       // Don't close the socket in cleanup - we'll handle it when leaving the game
     };
-  }, [roomId, playerColor, playerName, navigate, isHost]);
+  }, [actualRoomId, roomId, playerColor, playerName, navigate, isHost, isSpectating]);
 
   const calculateValidMoves = useCallback((board, fromRow, fromCol, piece) => {
     const moves = [];
@@ -143,6 +161,9 @@ const MultiplayerGame = () => {
 
   const handleSquareClick = useCallback((row, col) => {
     if (gameState.gameStatus !== 'playing') return;
+    
+    // Don't allow moves when spectating
+    if (isSpectating) return;
 
     const piece = board[row][col];
     
@@ -203,7 +224,7 @@ const MultiplayerGame = () => {
     if (gameState.gameStatus === 'finished') {
       return <p className="text-xl font-bold text-green-400">{gameState.winner} Wins!</p>;
     }
-    return <p className="text-lg">Playing as: <span className="font-bold text-blue-400">{playerColor}</span></p>;
+    return isSpectating ? <p className="text-lg">Spectating: <span className="font-bold text-purple-400">Watching Game</span></p> : <p className="text-lg">Playing as: <span className="font-bold text-blue-400">{playerColor}</span></p>;
   };
 
   const handleLeaveGame = () => {
@@ -214,7 +235,7 @@ const MultiplayerGame = () => {
     // Clean up any global references
     window.multiplayerSocket = null;
     window.multiplayerPlayerName = null;
-    navigate('/multiplayer');
+    navigate(isSpectating ? '/spectate' : '/multiplayer');
   };
 
   if (error) {

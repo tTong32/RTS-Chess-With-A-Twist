@@ -358,6 +358,25 @@ app.post('/api/user/:userId/matchmaking/leave', (req, res) => {
   res.json({ success: true });
 });
 
+// Get active games for spectating
+app.get('/api/games/active', (req, res) => {
+  const activeGames = [];
+  
+  for (const [roomId, game] of games.entries()) {
+    if (game.gameState.gameStatus === 'playing') {
+      const players = Array.from(game.players.values());
+      activeGames.push({
+        roomId,
+        player1: players[0]?.name || 'Unknown',
+        player2: players[1]?.name || 'Unknown',
+        gameTime: game.gameState.gameTime
+      });
+    }
+  }
+  
+  res.json({ success: true, games: activeGames });
+});
+
 // Game state management
 class GameRoom {
   constructor(roomId, hostPlayer, customBoard = null, isRated = true) {
@@ -639,6 +658,22 @@ io.on('connection', (socket) => {
     } else {
       socket.emit('error', { message: result.error });
     }
+  });
+
+  // Spectate a game
+  socket.on('spectate-game', ({ roomId }) => {
+    const game = games.get(roomId);
+    
+    if (!game) {
+      socket.emit('error', { message: 'Game not found' });
+      return;
+    }
+    
+    socket.join(roomId);
+    socket.emit('spectating-started', { roomId });
+    socket.emit('game-state', game.gameState);
+    
+    console.log(`Spectator connected to room ${roomId}`);
   });
 
   // Handle disconnection
