@@ -3,6 +3,9 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcrypt';
+import database from './database/db.js';
+import emailService from './services/emailService.js';
 
 const app = express();
 const server = createServer(app);
@@ -19,59 +22,75 @@ app.use(express.json());
 // Store active games
 const games = new Map();
 
-// In-memory user database (in production, use a real database)
-const users = new Map(); // userId -> user object
+// Initialize database on server start
+database.init().catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
 
 // API Routes for authentication and user data
-app.post('/api/signup', (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const { username, email, password } = req.body;
   
   if (!username || !email || !password) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
   }
   
-  // Check if user already exists
-  for (const [_, user] of users.entries()) {
-    if (user.email === email || user.username === username) {
-      return res.status(400).json({ success: false, error: 'User already exists' });
-    }
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ success: false, error: 'Invalid email format' });
   }
   
-  const userId = uuidv4();
-  const newUser = {
-    id: userId,
-    username,
-    email,
-    password, // In production, hash this!
-    createdAt: new Date().toISOString(),
-    stats: {
-      gamesPlayed: 0,
-      wins: 0,
-      losses: 0,
-      draws: 0,
-      rating: 1000
-    },
-    recentGames: [],
-    customBoard: null,
-    friends: [],
-    pendingFriendRequests: []
-  };
+  // Check if user already exists
+  const existingUser = await database.get(
+    'SELECT * FROM users WHERE email = ? OR username = ?',
+    [email, username]
+  );
   
-  users.set(userId, newUser);
+  if (existingUser) {
+    return res.status(400).json({ success: false, error: 'User already exists' });
+  }
+  
+  // Hash password
+  const saltRounds = 10;
+  const passwordHash = await bcrypt.hash(password, saltRounds);
+  
+  const userId = uuidv4();
+  const verificationToken = uuidv4();
+  const tokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  
+  // Insert user into database
+  await database.run(
+    `INSERT INTO users (id, username, email, password_hash, verification_token, verification_token_expires, created_at, email_verified) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, username, email, passwordHash, verificationToken, tokenExpires, new Date().toISOString(), 0]
+  );
+  
+  // Send verification email
+  emailService.sendVerificationEmail(email, username, verificationToken);
   
   res.json({ 
     success: true, 
     user: {
-      id: newUser.id,
-      username: newUser.username,
-      email: newUser.email,
-      stats: newUser.stats
+      id: userId,
+      username,
+      email,
+      stats: {
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        rating: 1000
+      },
+      emailVerified: false
     },
-    token: userId // In production, use JWT tokens
+    token: userId,
+    message: 'Account created. Please check your email to verify your account.'
   });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   
   if (!email || !password) {
@@ -79,37 +98,57 @@ app.post('/api/login', (req, res) => {
   }
   
   // Find user by email
-  let foundUser = null;
-  for (const [_, user] of users.entries()) {
-    if (user.email === email && user.password === password) {
-      foundUser = user;
-      break;
-    }
+  const user = await database.get(
+    'SELECT * FROM users WHERE email = ?',
+    [email]
+  );
+  
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
   }
   
-  if (!foundUser) {
+  // Verify password
+  const passwordValid = await bcrypt.compare(password, user.password_hash);
+  
+  if (!passwordValid) {
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
   }
   
   res.json({ 
     success: true, 
     user: {
-      id: foundUser.id,
-      username: foundUser.username,
-      email: foundUser.email,
-      stats: foundUser.stats
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      stats: {
+        gamesPlayed: user.stats_games_played,
+        wins: user.stats_wins,
+        losses: user.stats_losses,
+        draws: user.stats_draws,
+        rating: user.stats_rating
+      },
+      emailVerified: user.email_verified === 1
     },
-    token: foundUser.id
+    token: user.id
   });
 });
 
-app.get('/api/user/:userId', (req, res) => {
+app.get('/api/user/:userId', async (req, res) => {
   const { userId } = req.params;
-  const user = users.get(userId);
+  const user = await database.get(
+    'SELECT * FROM users WHERE id = ?',
+    [userId]
+  );
   
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
+  
+  // Get recent games
+  const recentGames = await database.all(
+    'SELECT * FROM game_results WHERE user_id = ? ORDER BY game_date DESC LIMIT 10',
+    [userId]
+  );
   
   res.json({ 
     success: true,
@@ -117,15 +156,30 @@ app.get('/api/user/:userId', (req, res) => {
       id: user.id,
       username: user.username,
       email: user.email,
-      stats: user.stats,
-      recentGames: user.recentGames
+      stats: {
+        gamesPlayed: user.stats_games_played,
+        wins: user.stats_wins,
+        losses: user.stats_losses,
+        draws: user.stats_draws,
+        rating: user.stats_rating
+      },
+      recentGames: recentGames.map(game => ({
+        opponent: game.opponent_name,
+        result: game.result,
+        duration: game.duration,
+        mode: game.mode,
+        date: game.game_date
+      }))
     }
   });
 });
 
-app.get('/api/user/:userId/custom-board', (req, res) => {
+app.get('/api/user/:userId/custom-board', async (req, res) => {
   const { userId } = req.params;
-  const user = users.get(userId);
+  const user = await database.get(
+    'SELECT custom_board FROM users WHERE id = ?',
+    [userId]
+  );
   
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
@@ -133,104 +187,136 @@ app.get('/api/user/:userId/custom-board', (req, res) => {
   
   res.json({ 
     success: true,
-    customBoard: user.customBoard
+    customBoard: user.custom_board ? JSON.parse(user.custom_board) : null
   });
 });
 
-app.post('/api/user/:userId/custom-board', (req, res) => {
+app.post('/api/user/:userId/custom-board', async (req, res) => {
   const { userId } = req.params;
   const { customBoard } = req.body;
-  const user = users.get(userId);
+  
+  // Check if user exists
+  const user = await database.get('SELECT id FROM users WHERE id = ?', [userId]);
   
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   
-  user.customBoard = customBoard;
-  users.set(userId, user);
+  // Update custom board
+  await database.run(
+    'UPDATE users SET custom_board = ? WHERE id = ?',
+    [JSON.stringify(customBoard), userId]
+  );
   
   res.json({ success: true });
 });
 
-app.post('/api/user/:userId/game-result', (req, res) => {
+app.post('/api/user/:userId/game-result', async (req, res) => {
   const { userId } = req.params;
-  const { result, opponent, duration, mode } = req.body; // result: 'win', 'loss', 'draw'
-  const user = users.get(userId);
+  const { result, opponent, opponentId, duration, mode } = req.body; // result: 'win', 'loss', 'draw'
+  
+  // Get current user stats
+  const user = await database.get(
+    'SELECT * FROM users WHERE id = ?',
+    [userId]
+  );
   
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   
-  // Update stats
-  user.stats.gamesPlayed++;
+  // Calculate new stats
+  let newGamesPlayed = user.stats_games_played + 1;
+  let newWins = user.stats_wins;
+  let newLosses = user.stats_losses;
+  let newDraws = user.stats_draws;
+  let newRating = user.stats_rating;
+  
   if (result === 'win') {
-    user.stats.wins++;
-    user.stats.rating = Math.min(2800, user.stats.rating + 15);
+    newWins++;
+    newRating = Math.min(2800, newRating + 15);
   } else if (result === 'loss') {
-    user.stats.losses++;
-    user.stats.rating = Math.max(400, user.stats.rating - 15);
+    newLosses++;
+    newRating = Math.max(400, newRating - 15);
   } else {
-    user.stats.draws++;
+    newDraws++;
   }
   
-  // Add to recent games
-  const gameEntry = {
-    opponent,
-    result,
-    duration,
-    mode,
-    date: new Date().toISOString()
-  };
+  // Update user stats in database
+  await database.run(
+    `UPDATE users 
+     SET stats_games_played = ?, stats_wins = ?, stats_losses = ?, stats_draws = ?, stats_rating = ? 
+     WHERE id = ?`,
+    [newGamesPlayed, newWins, newLosses, newDraws, newRating, userId]
+  );
   
-  user.recentGames.unshift(gameEntry);
-  if (user.recentGames.length > 10) {
-    user.recentGames = user.recentGames.slice(0, 10);
-  }
+  // Add to game results
+  const gameId = uuidv4();
+  await database.run(
+    `INSERT INTO game_results (id, user_id, opponent_id, opponent_name, result, duration, mode, game_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [gameId, userId, opponentId || null, opponent || 'Unknown', result, duration || null, mode || 'multiplayer', new Date().toISOString()]
+  );
   
-  users.set(userId, user);
-  
-  res.json({ success: true, stats: user.stats });
+  res.json({ 
+    success: true, 
+    stats: {
+      gamesPlayed: newGamesPlayed,
+      wins: newWins,
+      losses: newLosses,
+      draws: newDraws,
+      rating: newRating
+    }
+  });
 });
 
 // Friends API endpoints
-app.get('/api/user/:userId/friends', (req, res) => {
+app.get('/api/user/:userId/friends', async (req, res) => {
   const { userId } = req.params;
-  const user = users.get(userId);
   
+  // Verify user exists
+  const user = await database.get('SELECT id FROM users WHERE id = ?', [userId]);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   
-  // Get friend details
-  const friendsList = user.friends.map(friendId => {
-    const friend = users.get(friendId);
-    return friend ? {
-      id: friend.id,
-      username: friend.username,
-      stats: friend.stats
-    } : null;
-  }).filter(Boolean);
+  // Get friends list
+  const friendsList = await database.all(
+    `SELECT u.id, u.username, u.stats_games_played, u.stats_wins, u.stats_losses, u.stats_draws, u.stats_rating
+     FROM friends f
+     JOIN users u ON f.friend_id = u.id
+     WHERE f.user_id = ?`,
+    [userId]
+  );
   
-  res.json({ success: true, friends: friendsList });
+  res.json({ 
+    success: true, 
+    friends: friendsList.map(f => ({
+      id: f.id,
+      username: f.username,
+      stats: {
+        gamesPlayed: f.stats_games_played,
+        wins: f.stats_wins,
+        losses: f.stats_losses,
+        draws: f.stats_draws,
+        rating: f.stats_rating
+      }
+    }))
+  });
 });
 
-app.post('/api/user/:userId/friends/add', (req, res) => {
+app.post('/api/user/:userId/friends/add', async (req, res) => {
   const { userId } = req.params;
   const { friendUsername } = req.body;
-  const user = users.get(userId);
   
+  // Verify user exists
+  const user = await database.get('SELECT id FROM users WHERE id = ?', [userId]);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   
   // Find friend by username
-  let friend = null;
-  for (const [_, u] of users.entries()) {
-    if (u.username === friendUsername) {
-      friend = u;
-      break;
-    }
-  }
+  const friend = await database.get('SELECT id FROM users WHERE username = ?', [friendUsername]);
   
   if (!friend) {
     return res.status(404).json({ success: false, error: 'User not found' });
@@ -240,69 +326,95 @@ app.post('/api/user/:userId/friends/add', (req, res) => {
     return res.status(400).json({ success: false, error: 'Cannot add yourself as a friend' });
   }
   
-  if (user.friends.includes(friend.id)) {
+  // Check if already friends
+  const existingFriendship = await database.get(
+    'SELECT * FROM friends WHERE user_id = ? AND friend_id = ?',
+    [userId, friend.id]
+  );
+  
+  if (existingFriendship) {
     return res.status(400).json({ success: false, error: 'Already friends with this user' });
   }
   
-  // Add to friends list
-  user.friends.push(friend.id);
-  friend.friends.push(user.id);
-  
-  users.set(userId, user);
-  users.set(friend.id, friend);
+  // Add bidirectional friendship
+  await database.run(
+    'INSERT INTO friends (user_id, friend_id, created_at) VALUES (?, ?, ?)',
+    [userId, friend.id, new Date().toISOString()]
+  );
+  await database.run(
+    'INSERT INTO friends (user_id, friend_id, created_at) VALUES (?, ?, ?)',
+    [friend.id, userId, new Date().toISOString()]
+  );
   
   res.json({ success: true });
 });
 
-app.post('/api/user/:userId/friends/remove', (req, res) => {
+app.post('/api/user/:userId/friends/remove', async (req, res) => {
   const { userId } = req.params;
   const { friendId } = req.body;
-  const user = users.get(userId);
   
+  // Verify user exists
+  const user = await database.get('SELECT id FROM users WHERE id = ?', [userId]);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   
-  if (!user.friends.includes(friendId)) {
+  // Check if friendship exists
+  const friendship = await database.get(
+    'SELECT * FROM friends WHERE user_id = ? AND friend_id = ?',
+    [userId, friendId]
+  );
+  
+  if (!friendship) {
     return res.status(400).json({ success: false, error: 'Not friends with this user' });
   }
   
-  user.friends = user.friends.filter(id => id !== friendId);
-  const friend = users.get(friendId);
-  if (friend) {
-    friend.friends = friend.friends.filter(id => id !== userId);
-    users.set(friendId, friend);
-  }
-  
-  users.set(userId, user);
+  // Remove bidirectional friendship
+  await database.run(
+    'DELETE FROM friends WHERE user_id = ? AND friend_id = ?',
+    [userId, friendId]
+  );
+  await database.run(
+    'DELETE FROM friends WHERE user_id = ? AND friend_id = ?',
+    [friendId, userId]
+  );
   
   res.json({ success: true });
 });
 
-app.get('/api/search/users/:username', (req, res) => {
+app.get('/api/search/users/:username', async (req, res) => {
   const { username } = req.params;
   
   // Search for users by username
-  const results = [];
-  for (const [_, user] of users.entries()) {
-    if (user.username.toLowerCase().includes(username.toLowerCase())) {
-      results.push({
-        id: user.id,
-        username: user.username,
-        stats: user.stats
-      });
-    }
-  }
+  const results = await database.all(
+    `SELECT id, username, stats_games_played, stats_wins, stats_losses, stats_draws, stats_rating
+     FROM users 
+     WHERE username LIKE ?`,
+    [`%${username}%`]
+  );
   
-  res.json({ success: true, results });
+  res.json({ 
+    success: true, 
+    results: results.map(u => ({
+      id: u.id,
+      username: u.username,
+      stats: {
+        gamesPlayed: u.stats_games_played,
+        wins: u.stats_wins,
+        losses: u.stats_losses,
+        draws: u.stats_draws,
+        rating: u.stats_rating
+      }
+    }))
+  });
 });
 
 // Matchmaking queue
 const matchmakingQueue = []; // Array of { userId, rating, timestamp }
 
-app.post('/api/user/:userId/matchmaking/queue', (req, res) => {
+app.post('/api/user/:userId/matchmaking/queue', async (req, res) => {
   const { userId } = req.params;
-  const user = users.get(userId);
+  const user = await database.get('SELECT stats_rating FROM users WHERE id = ?', [userId]);
   
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
@@ -314,17 +426,19 @@ app.post('/api/user/:userId/matchmaking/queue', (req, res) => {
     return res.json({ success: true, message: 'Already in queue' });
   }
   
+  const userRating = user.stats_rating;
+  
   // Add to queue
   matchmakingQueue.push({
     userId,
-    rating: user.stats.rating,
+    rating: userRating,
     timestamp: Date.now()
   });
   
   // Try to find a match (within 200 ELO rating difference)
   const match = matchmakingQueue.find(entry => 
     entry.userId !== userId && 
-    Math.abs(entry.rating - user.stats.rating) <= 200
+    Math.abs(entry.rating - userRating) <= 200
   );
   
   if (match) {
@@ -334,12 +448,15 @@ app.post('/api/user/:userId/matchmaking/queue', (req, res) => {
     matchmakingQueue.splice(userIndex, 1);
     matchmakingQueue.splice(matchIndex, 1);
     
+    // Get opponent username
+    const opponent = await database.get('SELECT username FROM users WHERE id = ?', [match.userId]);
+    
     res.json({ 
       success: true, 
       matched: true,
       opponent: {
         id: match.userId,
-        username: users.get(match.userId).username
+        username: opponent.username
       }
     });
   } else {
@@ -356,6 +473,40 @@ app.post('/api/user/:userId/matchmaking/leave', (req, res) => {
   }
   
   res.json({ success: true });
+});
+
+// Email verification endpoint
+app.get('/api/verify-email', async (req, res) => {
+  const { token } = req.query;
+  
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'Verification token missing' });
+  }
+  
+  // Find user with this token
+  const user = await database.get(
+    'SELECT * FROM users WHERE verification_token = ?',
+    [token]
+  );
+  
+  if (!user) {
+    return res.status(400).json({ success: false, error: 'Invalid verification token' });
+  }
+  
+  // Check if token is expired
+  if (user.verification_token_expires < Date.now()) {
+    return res.status(400).json({ success: false, error: 'Verification token expired' });
+  }
+  
+  // Mark email as verified and clear tokens
+  await database.run(
+    `UPDATE users 
+     SET email_verified = 1, verification_token = NULL, verification_token_expires = NULL 
+     WHERE id = ?`,
+    [user.id]
+  );
+  
+  res.json({ success: true, message: 'Email verified successfully' });
 });
 
 // Get active games for spectating
