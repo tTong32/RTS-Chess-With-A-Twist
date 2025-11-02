@@ -13,6 +13,11 @@ Completed:
 - Play a Friend system for unrated games
 - Custom boards linked to user accounts
 - Spectate functionality for watching active games
+- SQL database with persistent storage (SQLite)
+- Bcrypt password hashing for secure authentication
+- Email verification system with expiring tokens
+- Proper data pipelines for account management
+- Protected sensitive data from being committed to git
 
 Remaining:
 None at this time!
