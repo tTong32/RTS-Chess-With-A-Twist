@@ -10,6 +10,8 @@ import MultiplayerLobby from './components/MultiplayerLobby.jsx';
 import MultiplayerGame from './components/MultiplayerGame.jsx';
 import AIGameSetup from './components/AIGameSetup.jsx';
 import AIGame from './components/AIGame.jsx';
+import Friends from './components/Friends.jsx';
+import Spectate from './components/Spectate.jsx';
 import { CustomPieces } from './game/CustomPieces.js';
 
 export function initializeDefaultBoard() {
@@ -63,6 +65,8 @@ function App() {
                     <Route path="/multiplayer-game" element={<MultiplayerGame />} />
                     <Route path="/ai-setup" element={<AIGameSetup />} />
                     <Route path="/ai-game" element={<AIGame />} />
+                    <Route path="/friends" element={<Friends />} />
+                    <Route path="/spectate" element={<Spectate />} />
                 </Routes>
             </BrowserRouter>
         </AuthProvider>
