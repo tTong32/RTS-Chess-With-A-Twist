@@ -12,6 +12,7 @@ Completed:
 - Matchmaking system for rated games
 - Play a Friend system for unrated games
 - Custom boards linked to user accounts
+- Spectate functionality for watching active games
 
 Remaining:
-- Add spectate functionality for games
+None at this time!
