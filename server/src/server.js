@@ -52,7 +52,9 @@ app.post('/api/signup', (req, res) => {
       rating: 1000
     },
     recentGames: [],
-    customBoard: null
+    customBoard: null,
+    friends: [],
+    pendingFriendRequests: []
   };
   
   users.set(userId, newUser);
@@ -190,9 +192,175 @@ app.post('/api/user/:userId/game-result', (req, res) => {
   res.json({ success: true, stats: user.stats });
 });
 
+// Friends API endpoints
+app.get('/api/user/:userId/friends', (req, res) => {
+  const { userId } = req.params;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  // Get friend details
+  const friendsList = user.friends.map(friendId => {
+    const friend = users.get(friendId);
+    return friend ? {
+      id: friend.id,
+      username: friend.username,
+      stats: friend.stats
+    } : null;
+  }).filter(Boolean);
+  
+  res.json({ success: true, friends: friendsList });
+});
+
+app.post('/api/user/:userId/friends/add', (req, res) => {
+  const { userId } = req.params;
+  const { friendUsername } = req.body;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  // Find friend by username
+  let friend = null;
+  for (const [_, u] of users.entries()) {
+    if (u.username === friendUsername) {
+      friend = u;
+      break;
+    }
+  }
+  
+  if (!friend) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  if (friend.id === userId) {
+    return res.status(400).json({ success: false, error: 'Cannot add yourself as a friend' });
+  }
+  
+  if (user.friends.includes(friend.id)) {
+    return res.status(400).json({ success: false, error: 'Already friends with this user' });
+  }
+  
+  // Add to friends list
+  user.friends.push(friend.id);
+  friend.friends.push(user.id);
+  
+  users.set(userId, user);
+  users.set(friend.id, friend);
+  
+  res.json({ success: true });
+});
+
+app.post('/api/user/:userId/friends/remove', (req, res) => {
+  const { userId } = req.params;
+  const { friendId } = req.body;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  if (!user.friends.includes(friendId)) {
+    return res.status(400).json({ success: false, error: 'Not friends with this user' });
+  }
+  
+  user.friends = user.friends.filter(id => id !== friendId);
+  const friend = users.get(friendId);
+  if (friend) {
+    friend.friends = friend.friends.filter(id => id !== userId);
+    users.set(friendId, friend);
+  }
+  
+  users.set(userId, user);
+  
+  res.json({ success: true });
+});
+
+app.get('/api/search/users/:username', (req, res) => {
+  const { username } = req.params;
+  
+  // Search for users by username
+  const results = [];
+  for (const [_, user] of users.entries()) {
+    if (user.username.toLowerCase().includes(username.toLowerCase())) {
+      results.push({
+        id: user.id,
+        username: user.username,
+        stats: user.stats
+      });
+    }
+  }
+  
+  res.json({ success: true, results });
+});
+
+// Matchmaking queue
+const matchmakingQueue = []; // Array of { userId, rating, timestamp }
+
+app.post('/api/user/:userId/matchmaking/queue', (req, res) => {
+  const { userId } = req.params;
+  const user = users.get(userId);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  
+  // Check if already in queue
+  const alreadyInQueue = matchmakingQueue.find(entry => entry.userId === userId);
+  if (alreadyInQueue) {
+    return res.json({ success: true, message: 'Already in queue' });
+  }
+  
+  // Add to queue
+  matchmakingQueue.push({
+    userId,
+    rating: user.stats.rating,
+    timestamp: Date.now()
+  });
+  
+  // Try to find a match (within 200 ELO rating difference)
+  const match = matchmakingQueue.find(entry => 
+    entry.userId !== userId && 
+    Math.abs(entry.rating - user.stats.rating) <= 200
+  );
+  
+  if (match) {
+    // Remove both from queue
+    const userIndex = matchmakingQueue.findIndex(e => e.userId === userId);
+    const matchIndex = matchmakingQueue.findIndex(e => e.userId === match.userId);
+    matchmakingQueue.splice(userIndex, 1);
+    matchmakingQueue.splice(matchIndex, 1);
+    
+    res.json({ 
+      success: true, 
+      matched: true,
+      opponent: {
+        id: match.userId,
+        username: users.get(match.userId).username
+      }
+    });
+  } else {
+    res.json({ success: true, matched: false, message: 'Searching for opponent...' });
+  }
+});
+
+app.post('/api/user/:userId/matchmaking/leave', (req, res) => {
+  const { userId } = req.params;
+  const index = matchmakingQueue.findIndex(entry => entry.userId === userId);
+  
+  if (index !== -1) {
+    matchmakingQueue.splice(index, 1);
+  }
+  
+  res.json({ success: true });
+});
+
 // Game state management
 class GameRoom {
-  constructor(roomId, hostPlayer, customBoard = null) {
+  constructor(roomId, hostPlayer, customBoard = null, isRated = true) {
     this.roomId = roomId;
     this.players = new Map();
     this.gameState = {
@@ -203,6 +371,7 @@ class GameRoom {
       gameTime: 0,
       winner: null
     };
+    this.isRated = isRated; // Whether rating changes for this game
     this.addPlayer(hostPlayer);
   }
 

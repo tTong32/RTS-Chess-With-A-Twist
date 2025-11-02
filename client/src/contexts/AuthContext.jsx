@@ -141,6 +141,80 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const addFriend = async (friendUsername) => {
+    if (!user) return { success: false, error: 'Not logged in' };
+
+    try {
+      const response = await fetch(`${SERVER_URL}/api/user/${user.id}/friends/add`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ friendUsername }),
+      });
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error adding friend:', error);
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
+  const removeFriend = async (friendId) => {
+    if (!user) return { success: false, error: 'Not logged in' };
+
+    try {
+      const response = await fetch(`${SERVER_URL}/api/user/${user.id}/friends/remove`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ friendId }),
+      });
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
+  const fetchFriends = async () => {
+    if (!user) return [];
+
+    try {
+      const response = await fetch(`${SERVER_URL}/api/user/${user.id}/friends`);
+      const data = await response.json();
+      
+      if (data.success) {
+        return data.friends;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+      return [];
+    }
+  };
+
+  const searchUsers = async (username) => {
+    if (!user) return [];
+
+    try {
+      const response = await fetch(`${SERVER_URL}/api/search/users/${username}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        return data.results;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error searching users:', error);
+      return [];
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -150,6 +224,10 @@ export const AuthProvider = ({ children }) => {
     refreshUserData,
     saveCustomBoard,
     fetchCustomBoard,
+    addFriend,
+    removeFriend,
+    fetchFriends,
+    searchUsers,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

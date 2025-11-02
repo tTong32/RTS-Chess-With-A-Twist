@@ -12,7 +12,7 @@ import AIGameSetup from './components/AIGameSetup.jsx';
 import AIGame from './components/AIGame.jsx';
 import { CustomPieces } from './game/CustomPieces.js';
 
-function initializeDefaultBoard() {
+export function initializeDefaultBoard() {
     const initialBoard = Array(8).fill().map(() => Array(8).fill(null));
     const customPieces = new CustomPieces();
 
