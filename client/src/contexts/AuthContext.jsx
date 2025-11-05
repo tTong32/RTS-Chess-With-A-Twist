@@ -16,11 +16,18 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
+    // Check for existing session on page load
     const token = localStorage.getItem('authToken');
+    const rememberMe = localStorage.getItem('rememberMe') === 'true';
+    
     if (token) {
+      // Validate token by fetching user data
       fetchUserData(token);
     } else {
+      // Clear rememberMe if no token exists
+      if (rememberMe) {
+        localStorage.removeItem('rememberMe');
+      }
       setLoading(false);
     }
   }, []);
@@ -43,7 +50,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const signup = async (username, email, password) => {
+  const signup = async (username, email, password, rememberMe = false) => {
     try {
       const response = await fetch(`${SERVER_URL}/api/signup`, {
         method: 'POST',
@@ -56,7 +63,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
       
       if (data.success) {
+        // Store token in localStorage (persists across sessions)
         localStorage.setItem('authToken', data.token);
+        // Store rememberMe preference
+        localStorage.setItem('rememberMe', rememberMe.toString());
         setUser(data.user);
         return { success: true };
       } else {
@@ -68,7 +78,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     try {
       const response = await fetch(`${SERVER_URL}/api/login`, {
         method: 'POST',
@@ -81,7 +91,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
       
       if (data.success) {
+        // Store token in localStorage (persists across sessions)
         localStorage.setItem('authToken', data.token);
+        // Store rememberMe preference
+        localStorage.setItem('rememberMe', rememberMe.toString());
         setUser(data.user);
         return { success: true };
       } else {
@@ -95,6 +108,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('rememberMe');
     setUser(null);
   };
 

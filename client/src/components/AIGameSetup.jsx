@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CustomPieces } from '../game/CustomPieces.js';
 import { initializeDefaultBoard } from '../App.jsx';
+import SharedNav from './SharedNav.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 // Helper function to get piece symbol
 function getPieceSymbol(type) {
@@ -15,23 +17,46 @@ const EnhancedAIGameSetup = () => {
   const [customBoard, setCustomBoard] = useState(null);
   const [displayBoard, setDisplayBoard] = useState(null);
   const navigate = useNavigate();
+  const { user, fetchCustomBoard } = useAuth();
 
-  // Load saved board configuration from localStorage
+  // Load saved board configuration - check server first, then localStorage
   useEffect(() => {
-    const savedBoard = localStorage.getItem('savedBoardConfiguration');
-    if (savedBoard) {
-      try {
-        const parsedBoard = JSON.parse(savedBoard);
-        setCustomBoard(parsedBoard);
-        setDisplayBoard(parsedBoard);
-      } catch (error) {
-        console.error('Error loading saved board configuration:', error);
-        setDisplayBoard(initializeDefaultBoard());
+    const loadBoard = async () => {
+      let board = null;
+      
+      // First, try to load from server if user is logged in
+      if (user) {
+        try {
+          board = await fetchCustomBoard();
+          if (board) {
+            setCustomBoard(board);
+            setDisplayBoard(board);
+            return;
+          }
+        } catch (error) {
+          console.error('Error loading board from server:', error);
+        }
       }
-    } else {
+      
+      // Fallback to localStorage
+      const savedBoard = localStorage.getItem('savedBoardConfiguration');
+      if (savedBoard) {
+        try {
+          const parsedBoard = JSON.parse(savedBoard);
+          setCustomBoard(parsedBoard);
+          setDisplayBoard(parsedBoard);
+          return;
+        } catch (error) {
+          console.error('Error loading saved board configuration:', error);
+        }
+      }
+      
+      // Default board if nothing found
       setDisplayBoard(initializeDefaultBoard());
-    }
-  }, []);
+    };
+    
+    loadBoard();
+  }, [user, fetchCustomBoard]);
 
   const eloRanges = [
     { min: 400, max: 800, label: 'Beginner', description: 'Makes basic moves, slow reactions', color: 'green' },
@@ -74,72 +99,7 @@ const EnhancedAIGameSetup = () => {
 
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-white">
-      {/* Navigation Sidebar */}
-      <div className="fixed left-0 top-0 h-full w-64 bg-[#2c2c2c] border-r border-[#404040]">
-        <div className="p-6">
-          {/* Logo */}
-          <div className="flex items-center mb-8">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
-              <span className="text-white font-bold text-lg">♔</span>
-            </div>
-            <span className="text-xl font-bold">RTS Chess</span>
-          </div>
-
-          {/* Navigation Items */}
-          <nav className="space-y-2">
-            <button 
-              onClick={() => navigate('/')}
-              className="w-full flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-[#404040] transition-colors"
-            >
-              <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-              </svg>
-              Home
-            </button>
-            
-            <button 
-              onClick={() => navigate('/ai-setup')}
-              className="w-full flex items-center px-4 py-3 rounded-lg bg-[#404040] text-white hover:bg-[#505050] transition-colors"
-            >
-              <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Play vs AI
-            </button>
-            
-            <button 
-              onClick={() => navigate('/multiplayer')}
-              className="w-full flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-[#404040] transition-colors"
-            >
-              <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z" />
-              </svg>
-              Multiplayer
-            </button>
-            
-            <button 
-              onClick={() => navigate('/board-editor')}
-              className="w-full flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-[#404040] transition-colors"
-            >
-              <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" />
-              </svg>
-              Board Editor
-            </button>
-          </nav>
-        </div>
-
-        {/* Theme Toggle */}
-        <div className="absolute bottom-6 left-6 right-6">
-          <div className="flex items-center justify-center bg-[#404040] rounded-lg p-2">
-            <button className="flex items-center justify-center w-8 h-8 rounded-md bg-[#2c2c2c] text-white">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
+      <SharedNav />
 
       {/* Main Content */}
       <div className="ml-64 p-8">
