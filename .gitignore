@@ -4,3 +4,16 @@ dist/
 *.log
 .DS_Store
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+server/src/chess.db
+server/chess.db
+server/src/*.db
+
+# Server files
+server/node_modules/
+server/logs/
+server/*.db
+

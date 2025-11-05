@@ -12,6 +12,7 @@ import AIGameSetup from './components/AIGameSetup.jsx';
 import AIGame from './components/AIGame.jsx';
 import Friends from './components/Friends.jsx';
 import Spectate from './components/Spectate.jsx';
+import VerifyEmail from './components/VerifyEmail.jsx';
 import { CustomPieces } from './game/CustomPieces.js';
 
 export function initializeDefaultBoard() {
@@ -67,6 +68,7 @@ function App() {
                     <Route path="/ai-game" element={<AIGame />} />
                     <Route path="/friends" element={<Friends />} />
                     <Route path="/spectate" element={<Spectate />} />
+                    <Route path="/verify-email" element={<VerifyEmail />} />
                 </Routes>
             </BrowserRouter>
         </AuthProvider>
